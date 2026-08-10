@@ -5,7 +5,7 @@ import testing
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
 fn test_version() {
-    testing.assert_eq_i32(version(), 1)
+    testing.assert_eq_i32(version(), 2)
 }
 
 fn test_pin_map() {
@@ -19,4 +19,38 @@ fn test_pin_map() {
     testing.assert_eq_i32(lcd_height(), 80)
     testing.assert_eq_i32(lcd_x_offset(), 1)
     testing.assert_eq_i32(lcd_y_offset(), 26)
+    testing.assert_eq_i32(voltage_monitor(), 29)
+    testing.assert_eq_i32(voltage_monitor_adc_ch(), 3)
+    testing.assert_eq_i32(temp_adc_ch(), 4)
+}
+
+fn test_font_metrics() {
+    testing.assert_eq_i32(font_char_w(), 6)
+    testing.assert_eq_i32(font_char_h(), 8)
+    // '0' col0 should be non-zero; space columns are zero.
+    testing.assert_eq_i32(font5x7_col(32, 0), 0)
+    testing.assert(font5x7_col('0', 0) != 0)
+}
+
+fn test_sense_math() {
+    // Mid-scale ~1650 mV at pin.
+    testing.assert_eq_i32(adc12_to_mv(2048), 1650)
+    // Divider 3:1 → pack mV.
+    testing.assert_eq_i32(battery_mv_from_adc12(2048), 4950)
+    // Full / empty percent clamps.
+    testing.assert_eq_i32(battery_pct(3000), 0)
+    testing.assert_eq_i32(battery_pct(4200), 100)
+    // Temp near 27°C when ADC ≈ 0.706 V → raw ≈ 0.706/3.3*4096 ≈ 876
+    let t = temp_c_from_adc12(876)
+    testing.assert(t >= 25)
+    testing.assert(t <= 29)
+}
+
+fn test_format_u32() {
+    let mut buf: [8]i32
+    let n = format_u32(buf[:], 123)
+    testing.assert_eq_i32(n, 3)
+    testing.assert_eq_i32(buf[0], '1')
+    testing.assert_eq_i32(buf[1], '2')
+    testing.assert_eq_i32(buf[2], '3')
 }

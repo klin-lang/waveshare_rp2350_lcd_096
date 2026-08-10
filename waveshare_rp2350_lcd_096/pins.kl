@@ -63,3 +63,31 @@ pub fn vbus_sense(): i32 {
 pub fn voltage_monitor(): i32 {
     return 29
 }
+
+/// ADC channel for `voltage_monitor` (GP29 → ch3).
+pub fn voltage_monitor_adc_ch(): i32 {
+    return 3
+}
+
+/// On-die temperature sensor ADC channel.
+pub fn temp_adc_ch(): i32 {
+    return 4
+}
+
+/// VSYS/battery resistive divider (pin_mv * num / den → pack mV). Waveshare ≈ 1:3.
+pub fn battery_divider_num(): i32 {
+    return 3
+}
+
+pub fn battery_divider_den(): i32 {
+    return 1
+}
+
+/// Soft empty/full thresholds for the percent bar (Li-ion single cell).
+pub fn battery_empty_mv(): i32 {
+    return 3300
+}
+
+pub fn battery_full_mv(): i32 {
+    return 4200
+}

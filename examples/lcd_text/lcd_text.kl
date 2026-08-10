@@ -1,0 +1,36 @@
+/// Font smoke: "KLIN 0.2" on the ST7735S.
+import "../../waveshare_rp2350_lcd_096" board
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    lcd.fill(board.color_black())
+
+    let mut line: [16]i32
+    line[0] = 'K'
+    line[1] = 'L'
+    line[2] = 'I'
+    line[3] = 'N'
+    line[4] = ' '
+    line[5] = '0'
+    line[6] = '.'
+    line[7] = '2'
+    lcd.draw_text_n(8, 28, line[:], 8, board.color_green(), board.color_black())
+
+    let mut sub: [12]i32
+    sub[0] = 'F'
+    sub[1] = 'O'
+    sub[2] = 'N'
+    sub[3] = 'T'
+    sub[4] = ' '
+    sub[5] = '5'
+    sub[6] = 'X'
+    sub[7] = '7'
+    lcd.draw_text_n(8, 44, sub[:], 8, board.color_cyan(), board.color_black())
+
+    while true {
+        board.delay_ms(500)
+    }
+}

@@ -1,0 +1,63 @@
+/// On-die temperature (ADC ch4) → LCD text + bar.
+import "github/klin-lang/machine_rp" machine
+import "../../waveshare_rp2350_lcd_096" board
+
+fn draw_bar(lcd: board.Lcd, pct: i32) {
+    let mut p = pct
+    if p < 0 {
+        p = 0
+    }
+    if p > 100 {
+        p = 100
+    }
+    lcd.fill_rect(8, 56, 144, 12, board.color_black())
+    lcd.fill_rect(8, 56, 144, 12, board.color_blue())
+    let w = (p * 144) / 100
+    if w > 0 {
+        lcd.fill_rect(8, 56, w, 12, board.color_yellow())
+    }
+}
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    lcd.fill(board.color_black())
+
+    board.enable_clk_adc()
+    // gpio ignored for temp channel 4
+    let adc = machine.adc_out_rp2350(0, board.temp_adc_ch())
+
+    let mut title: [8]i32
+    title[0] = 'T'
+    title[1] = 'E'
+    title[2] = 'M'
+    title[3] = 'P'
+    lcd.draw_text_n(8, 8, title[:], 4, board.color_white(), board.color_black())
+
+    while true {
+        let raw = adc.read_u12()
+        let mut tc = board.temp_c_from_adc12(raw)
+        if tc < 0 {
+            tc = 0
+        }
+        if tc > 100 {
+            tc = 100
+        }
+
+        let mut prefix: [2]i32
+        prefix[0] = 'T'
+        prefix[1] = '='
+        let mut suffix: [1]i32
+        suffix[0] = 'C'
+        let mut line: [16]i32
+        let n = board.format_label_u32(line[:], prefix[:], tc, suffix[:])
+        // clear text area then redraw
+        lcd.fill_rect(8, 28, 144, 16, board.color_black())
+        lcd.draw_text_n(8, 28, line[:], n, board.color_green(), board.color_black())
+        draw_bar(lcd, tc)
+
+        board.delay_ms(400)
+    }
+}

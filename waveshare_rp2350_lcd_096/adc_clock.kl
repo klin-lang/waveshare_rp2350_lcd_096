@@ -1,0 +1,26 @@
+/// Explicit RP2350 `clk_adc` enable (MMIO). `machine_rp` does not start this clock.
+module waveshare_rp2350_lcd_096
+
+/// Source ADC from ROSC (always available after reset) and enable the generator.
+/// Divider int=1. Call before `machine.adc_out_rp2350`.
+pub fn enable_clk_adc() {
+    // CLOCKS @ 0x40010000 — CLK_ADC_CTRL 0x6C, CLK_ADC_DIV 0x70, WAKE_EN0 0xAC
+    let ctrl = cast(*mut volatile i32, 0x4001006C)
+    let div = cast(*mut volatile i32, 0x40010070)
+    let wake = cast(*mut volatile i32, 0x400100AC)
+
+    // Ensure clk_adc not held in wake-disable (bit 2 = CLK_ADC).
+    *wake = *wake | (1 << 2)
+
+    // Disable while changing AUXSRC (ENABLE bit 11).
+    *ctrl = 0
+    // DIV: integer divisor in bits 31:16 — value 1.
+    *div = 1 << 16
+    // AUXSRC = ROSC_CLKSRC_PH (0x2 << 5), ENABLE (1 << 11)
+    *ctrl = (0x2 << 5) | (1 << 11)
+
+    let mut i: i32 = 0
+    while i < 100 {
+        i = i + 1
+    }
+}

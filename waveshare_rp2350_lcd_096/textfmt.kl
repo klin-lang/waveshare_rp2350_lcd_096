@@ -1,0 +1,76 @@
+/// Integer → decimal ASCII codes into a caller `[]i32` buffer (no heap, no libc).
+module waveshare_rp2350_lcd_096
+
+/// Write unsigned decimal of `n` into `buf` as ASCII codes. Returns length.
+pub fn format_u32(buf: []i32, n: i32): i32 {
+    if buf.len <= 0 {
+        return 0
+    }
+    let mut v = n
+    if v < 0 {
+        v = 0
+    }
+    let mut digits: i32 = 1
+    let mut t = v
+    while t >= 10 {
+        t = t / 10
+        digits = digits + 1
+    }
+    if digits > buf.len {
+        digits = buf.len
+    }
+    let mut i = digits
+    let mut x = v
+    while i > 0 {
+        i = i - 1
+        buf[i] = '0' + (x % 10)
+        x = x / 10
+    }
+    return digits
+}
+
+/// Copy ASCII codes from `src` into `dst`. Returns bytes copied.
+pub fn copy_codes(dst: []i32, src: []i32): i32 {
+    let mut n = src.len
+    if dst.len < n {
+        n = dst.len
+    }
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    return n
+}
+
+/// Append decimal `n` after `prefix` codes, then `suffix`. Returns total length in `out`.
+pub fn format_label_u32(
+    out: []i32,
+    prefix: []i32,
+    n: i32,
+    suffix: []i32
+): i32 {
+    let mut pos = copy_codes(out, prefix)
+    // Write digits into a small scratch then copy (no subslice in Klin MVP).
+    let mut digs: [12]i32
+    let nd = format_u32(digs[:], n)
+    let mut i: i32 = 0
+    while i < nd {
+        if pos >= out.len {
+            return pos
+        }
+        out[pos] = digs[i]
+        pos = pos + 1
+        i = i + 1
+    }
+    i = 0
+    while i < suffix.len {
+        if pos >= out.len {
+            return pos
+        }
+        out[pos] = suffix[i]
+        pos = pos + 1
+        i = i + 1
+    }
+    return pos
+}

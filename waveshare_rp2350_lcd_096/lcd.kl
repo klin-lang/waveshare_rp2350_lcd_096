@@ -261,6 +261,59 @@ pub fn (lcd: Lcd) vline(x: i32, y: i32, h: i32, color: i32) {
     lcd.fill_rect(x, y, 1, h, color)
 }
 
+/// Draw one 5×7 glyph at `(x,y)`. Cell is 6×8 (1 px gap). `ch` = ASCII code.
+pub fn (lcd: Lcd) draw_char(x: i32, y: i32, ch: i32, fg: i32, bg: i32) {
+    let mut col: i32 = 0
+    while col < 5 {
+        let bits = font5x7_col(ch, col)
+        let mut row: i32 = 0
+        while row < 7 {
+            let on = (bits >> row) & 1
+            let color = pick(on != 0) {
+                fg
+            } {
+                bg
+            }
+            lcd.pixel(x + col, y + row, color)
+            row = row + 1
+        }
+        // cell padding row
+        lcd.pixel(x + col, y + 7, bg)
+        col = col + 1
+    }
+    lcd.fill_rect(x + 5, y, 1, 8, bg)
+}
+
+/// Draw ASCII codes from `chars` (`[]i32`, e.g. `'A'` / `'0'+d`). No `str` indexing.
+pub fn (lcd: Lcd) draw_text(x: i32, y: i32, chars: []i32, fg: i32, bg: i32) {
+    lcd.draw_text_n(x, y, chars, chars.len, fg, bg)
+}
+
+/// Like `draw_text`, but only the first `n` codes (clamped to `chars.len`).
+pub fn (lcd: Lcd) draw_text_n(
+    x: i32,
+    y: i32,
+    chars: []i32,
+    n: i32,
+    fg: i32,
+    bg: i32
+) {
+    let mut lim = n
+    if lim > chars.len {
+        lim = chars.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    let mut cx = x
+    while i < lim {
+        lcd.draw_char(cx, y, chars[i], fg, bg)
+        cx = cx + font_char_w()
+        i = i + 1
+    }
+}
+
 pub fn (lcd: Lcd) deinit() {
     lcd.backlight(false)
     lcd.spi.deinit()

@@ -1,0 +1,64 @@
+/// Battery / VSYS monitor on GP29 → mV + percent bar on LCD.
+import "github/klin-lang/machine_rp" machine
+import "../../waveshare_rp2350_lcd_096" board
+
+fn draw_bar(lcd: board.Lcd, pct: i32) {
+    let mut p = pct
+    if p < 0 {
+        p = 0
+    }
+    if p > 100 {
+        p = 100
+    }
+    lcd.fill_rect(8, 56, 144, 12, board.color_black())
+    lcd.fill_rect(8, 56, 144, 12, board.color_blue())
+    let w = (p * 144) / 100
+    if w > 0 {
+        let col = pick(p < 20) {
+            board.color_red()
+        } {
+            board.color_green()
+        }
+        lcd.fill_rect(8, 56, w, 12, col)
+    }
+}
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    lcd.fill(board.color_black())
+
+    board.enable_clk_adc()
+    let adc = machine.adc_out_rp2350(
+        board.voltage_monitor(),
+        board.voltage_monitor_adc_ch()
+    )
+
+    let mut title: [8]i32
+    title[0] = 'B'
+    title[1] = 'A'
+    title[2] = 'T'
+    lcd.draw_text_n(8, 8, title[:], 3, board.color_white(), board.color_black())
+
+    while true {
+        let raw = adc.read_u12()
+        let mv = board.battery_mv_from_adc12(raw)
+        let pct = board.battery_pct(mv)
+
+        let mut prefix: [2]i32
+        prefix[0] = 'B'
+        prefix[1] = '='
+        let mut suffix: [2]i32
+        suffix[0] = 'M'
+        suffix[1] = 'V'
+        let mut line: [16]i32
+        let n = board.format_label_u32(line[:], prefix[:], mv, suffix[:])
+        lcd.fill_rect(8, 28, 144, 16, board.color_black())
+        lcd.draw_text_n(8, 28, line[:], n, board.color_cyan(), board.color_black())
+        draw_bar(lcd, pct)
+
+        board.delay_ms(400)
+    }
+}

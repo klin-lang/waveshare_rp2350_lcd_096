@@ -1,0 +1,48 @@
+/// Integer ADC conversions for onboard temp sensor and battery monitor.
+module waveshare_rp2350_lcd_096
+
+/// ADC full-scale reference in millivolts (board 3V3 rail assumption).
+pub fn adc_vref_mv(): i32 {
+    return 3300
+}
+
+/// Convert 12-bit ADC sample to millivolts at the pin.
+pub fn adc12_to_mv(raw: i32): i32 {
+    let mut r = raw
+    if r < 0 {
+        r = 0
+    }
+    if r > 4095 {
+        r = 4095
+    }
+    return (r * adc_vref_mv()) / 4096
+}
+
+/// RP2040/RP2350 die temp ≈ 27°C at 0.706 V, slope −1.721 mV/°C.
+/// Integer °C (truncated toward −∞ for negatives via careful order).
+pub fn temp_c_from_adc12(raw: i32): i32 {
+    let mv = adc12_to_mv(raw)
+    // T*1000 = 27000 - (mv - 706) * 1000 / 1.721
+    // 1000/1.721 ≈ 581
+    let delta = mv - 706
+    return (27000 - delta * 581) / 1000
+}
+
+/// Battery / VSYS millivolts from GP29 divider (see `battery_divider_*` in pins).
+pub fn battery_mv_from_adc12(raw: i32): i32 {
+    let pin_mv = adc12_to_mv(raw)
+    return (pin_mv * battery_divider_num()) / battery_divider_den()
+}
+
+/// Map battery mV to 0..=100 percent between empty/full thresholds (explicit).
+pub fn battery_pct(mv: i32): i32 {
+    let lo = battery_empty_mv()
+    let hi = battery_full_mv()
+    if mv <= lo {
+        return 0
+    }
+    if mv >= hi {
+        return 100
+    }
+    return ((mv - lo) * 100) / (hi - lo)
+}
