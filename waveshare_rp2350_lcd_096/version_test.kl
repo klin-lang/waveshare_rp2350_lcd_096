@@ -5,7 +5,7 @@ import testing
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
 fn test_version() {
-    testing.assert_eq_i32(version(), 2)
+    testing.assert_eq_i32(version(), 3)
 }
 
 fn test_pin_map() {
@@ -22,6 +22,10 @@ fn test_pin_map() {
     testing.assert_eq_i32(voltage_monitor(), 29)
     testing.assert_eq_i32(voltage_monitor_adc_ch(), 3)
     testing.assert_eq_i32(temp_adc_ch(), 4)
+    testing.assert_eq_i32(uart0_unit(), 0)
+    testing.assert_eq_i32(uart0_tx(), 0)
+    testing.assert_eq_i32(uart0_rx(), 1)
+    testing.assert_eq_i32(uart_default_baud(), 115200)
 }
 
 fn test_font_metrics() {

@@ -1,0 +1,36 @@
+/// Board UART0 helpers (explicit pins / baud; no hidden clock).
+module waveshare_rp2350_lcd_096
+
+import "github/klin-lang/machine_rp" machine
+
+/// Open UART0 on `uart0_tx`/`uart0_rx` (FUNCSEL 2). Caller supplies `peri_clk_hz`.
+pub fn uart0_out(peri_clk_hz: i32, baud: i32): machine.Uart {
+    return machine.uart_out_rp2350(
+        uart0_unit(),
+        uart0_tx(),
+        uart0_rx(),
+        peri_clk_hz,
+        baud
+    )
+}
+
+/// TX ASCII codes from a `[]i32` buffer (same encoding as LCD `draw_text`).
+pub fn uart_write_codes(u: machine.Uart, codes: []i32) {
+    uart_write_codes_n(u, codes, codes.len)
+}
+
+/// TX the first `n` ASCII codes (clamped).
+pub fn uart_write_codes_n(u: machine.Uart, codes: []i32, n: i32) {
+    let mut lim = n
+    if lim > codes.len {
+        lim = codes.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    while i < lim {
+        u.write_u8(codes[i])
+        i = i + 1
+    }
+}

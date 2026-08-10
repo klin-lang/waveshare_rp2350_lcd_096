@@ -91,3 +91,21 @@ pub fn battery_empty_mv(): i32 {
 pub fn battery_full_mv(): i32 {
     return 4200
 }
+
+/// Default console UART (Pico-compatible header / Arduino SERIAL1).
+/// Needs an external USB–UART adapter — Type-C is native USB, not this UART.
+pub fn uart0_unit(): i32 {
+    return 0
+}
+
+pub fn uart0_tx(): i32 {
+    return 0
+}
+
+pub fn uart0_rx(): i32 {
+    return 1
+}
+
+pub fn uart_default_baud(): i32 {
+    return 115200
+}
