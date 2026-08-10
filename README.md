@@ -76,10 +76,23 @@ klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.2.0
 cd examples/lcd_text    # or temp_chip / battery_mv / backlight / …
 make deps KLIN=/path/to/klin/bin/klin.dart
 make emit KLIN=/path/to/klin/bin/klin.dart
-make elf                # needs arm-none-eabi-gcc
+make elf                # needs arm-none-eabi-gcc (+ newlib nano via --specs=nano.specs)
 ```
 
-Flash the `.elf` / UF2 with your usual Pico 2 / RP2350 flow (picotool, OpenOCD, …).
+Link flags use `--specs=nano.specs -nostartfiles` (not bare `-nostdlib`) so
+GCC-emitted `memcpy` / `memset` resolve. Flash the `.elf` with picotool / OpenOCD /
+your usual Pico 2 / RP2350 flow.
+
+### Hardware smoke (`@v0.2`)
+
+| Example | Expect on LCD |
+|---|---|
+| `lcd_text` | green `KLIN 0.2`, cyan `FONT 5X7` |
+| `temp_chip` | `TEMP` + `T=xxC` updating, yellow bar |
+| `battery_mv` | `BAT` + `B=xxxxMV`, green/red bar (USB ≈ ~5000 mV class if divider OK) |
+
+Sanity: die temp roughly room ±15 °C (datasheet slope; not calibrated per chip).
+Battery: confirm `battery_divider_*` 3:1 vs your PCB / USB-vs-LiPo.
 
 ## License
 

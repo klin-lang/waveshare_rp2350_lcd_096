@@ -1,6 +1,6 @@
 CC := arm-none-eabi-gcc
 CFLAGS := -mcpu=cortex-m33 -mthumb -mfloat-abi=soft -ffreestanding -Os -ffunction-sections -fdata-sections
-LDFLAGS := -T linker.ld -Wl,--gc-sections -nostdlib
+LDFLAGS := -T linker.ld -Wl,--gc-sections --specs=nano.specs -nostartfiles
 
 KLIN ?= klin
 ROOT := ../..
