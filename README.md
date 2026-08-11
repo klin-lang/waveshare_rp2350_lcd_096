@@ -6,11 +6,11 @@ in [Klin](https://github.com/klin-lang/klin).
 Not a MicroPython port. No GC, no hidden heap, no hidden clocks.
 
 Chip API: [`machine_rp`](https://github.com/klin-lang/machine_rp) (`*_rp2350`).
-This package adds **pin map + ST7735S LCD + font + ADC + UART0 + sprites + light-sleep + external WS2812** for this board only.
+This package adds **pin map + ST7735S LCD + font + ADC + UART0 + sprites + light-sleep + external WS2812 + Hazard3 RISC-V twin example** for this board only.
 
 Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main/issues/095-board-waveshare-rp2350-lcd-096.md), chip targets [062](https://github.com/klin-lang/klin/blob/main/issues/062-targets-esp-rp.md).
 
-## Status (`@v0.6.0`)
+## Status (`@v0.7.0`)
 
 | Piece | Status |
 |---|---|
@@ -20,15 +20,15 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | 8×8 mono sprites (`blit_mono8` / `blit_mono8_trans` + stock icons) | ✅ |
 | Light sleep helpers (`sleep_cpu_hz` / `sleep_systick_reload`) + `sleep_demo` | ✅ |
 | External WS2812 bit-bang (`ws2812_out` / `show`) + `ws2812_strip` | ✅ |
+| Hazard3 RISC-V twin (`examples/riscv_lcd_text`) | ✅ |
 | `enable_clk_adc` + temp / battery mV helpers | ✅ |
 | UART0 helpers (`uart0_out`, `uart_write_codes`) | ✅ |
 | Backlight GPIO | ✅ |
-| Examples (`…`, `sleep_demo`, `ws2812_strip`) | ✅ |
 | Onboard WS2812 | — none on this PCB |
 | PIO WS2812 / PIO·DMA LCD | later (`machine_rp`) |
 | POWMAN deep sleep / dormant | later |
 
-`version()` → `6`.
+`version()` → `7`.
 
 ## Pins (LCD)
 
@@ -53,9 +53,11 @@ UART0 is the Pico-compatible header mapping (Arduino `SERIAL1`). Type-C is **nat
 
 Sprites: 8 row bytes, **bit7 = leftmost** pixel. Stock: `sprite_heart` / `check` / `cross` / `battery` / `arrow_r` / `smile`.
 
-Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration uses explicit `sleep_cpu_hz()` (12 MHz assumption). No USER button on this PCB — timer wake only. App must supply `@[isr("SysTick_Handler")]`.
+Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration uses explicit `sleep_cpu_hz()` (12 MHz assumption). No USER button on this PCB — timer wake only. App must supply `@[isr("SysTick_Handler")]`. **Arm-only** (SysTick / NVIC).
 
 WS2812: **external** strip on GP15 (bit-bang, no PIO). Buffer `0x00RRGGBB`; wire order GRB. Tune `ws2812_t0h` / `t1h` / `t0l` / `t1l` if `clk_sys` ≠ ~12 MHz. Avoid LCD SPI during `show`.
+
+RISC-V twin (`riscv_lcd_text`): same Klin LCD module, Hazard3 crt0 + IMAGE_DEF `0x1101`. Needs `riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32` and `mem.S` (`memcpy`/`memset`; no `nano.specs` on Ubuntu’s RISC-V package).
 
 ## Usage
 
@@ -63,41 +65,54 @@ WS2812: **external** strip on GP15 (bit-bang, no PIO). Buffer `0x00RRGGBB`; wire
 import "github/klin-lang/waveshare_rp2350_lcd_096" board
 
 fn main() {
-    let strip = board.ws2812_out_default()
-    let mut px: [8]i32
-    board.ws2812_fill(px[:], 8, board.ws2812_rgb(0, 20, 0))
-    strip.show(px[:], 8)
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    let mut line: [8]i32
+    line[0] = 'H'
+    line[1] = 'I'
+    lcd.draw_text_n(8, 28, line[:], 2, board.color_green(), board.color_black())
 }
 ```
 
 ```sh
 klin get github/klin-lang/machine_rp@v0.6.0
-klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.6.0
+klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.7.0
 ```
 
-## Examples (Arm Cortex-M33)
+## Examples
+
+### Arm Cortex-M33
 
 ```sh
-cd examples/ws2812_strip    # or sleep_demo / lcd_sprites / …
+cd examples/lcd_text    # or ws2812_strip / sleep_demo / …
 make deps KLIN=/path/to/klin/bin/klin.dart
 make emit KLIN=/path/to/klin/bin/klin.dart
-make elf                # needs arm-none-eabi-gcc (+ newlib nano via --specs=nano.specs)
+make elf                # arm-none-eabi-gcc + --specs=nano.specs
 ```
 
-Link flags use `--specs=nano.specs -nostartfiles` (not bare `-nostdlib`) so
-GCC-emitted `memcpy` / `memset` resolve. Flash the `.elf` with picotool / OpenOCD /
-your usual Pico 2 / RP2350 flow.
+### Hazard3 RISC-V
+
+```sh
+cd examples/riscv_lcd_text
+make deps KLIN=/path/to/klin/bin/klin.dart
+make emit KLIN=/path/to/klin/bin/klin.dart
+make elf                # riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32
+```
+
+Flash the `.elf` / UF2 with picotool / OpenOCD / your usual Pico 2 flow.
+Boot the core that matches the IMAGE_DEF (Arm vs RISC-V).
 
 ### Demo checklist
 
 | Example | Expect |
 |---|---|
-| `lcd_text` | green `KLIN 0.2`, cyan `FONT 5X7` |
+| `lcd_text` | green `KLIN 0.2`, cyan `FONT 5X7` (Arm) |
+| `riscv_lcd_text` | green `KLIN RV32`, cyan `HAZARD3` (RISC-V) |
 | `temp_chip` | `TEMP` + `T=xxC` updating, yellow bar |
 | `battery_mv` | `BAT` + `B=xxxxMV`, green/red bar |
 | `uart_console` | LCD `UART 0.3` + `TX=`/`RX=`/`CH=`; serial banner + echo @ 115200 |
 | `lcd_sprites` | `SPRITES` + heart/check/batt/smile; magenta arrow bouncing |
-| `sleep_demo` | `SLEEP 0.5` → backlight off (`ZZZ...`) → `AWAKE` + `N=` wake count |
+| `sleep_demo` | `SLEEP 0.5` → backlight off → `AWAKE` + `N=` (Arm) |
 | `ws2812_strip` | LCD `WS2812` / `GP15` / `I=`; 8-LED chase on external strip |
 
 ## License
