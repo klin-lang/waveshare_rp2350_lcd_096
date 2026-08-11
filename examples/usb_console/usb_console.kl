@@ -1,0 +1,110 @@
+/// USB CDC ACM console (Type-C) + LCD status: banner TX, echo RX, counters.
+/// Host: open /dev/ttyACM* (baud ignored). Polling USB stack — call poll() in loop.
+import "../../waveshare_rp2350_lcd_096" board
+
+fn paint_status(lcd: board.Lcd, tx_n: i32, rx_n: i32, last: i32) {
+    let mut line: [16]i32
+    let mut digs: [12]i32
+
+    line[0] = 'T'
+    line[1] = 'X'
+    line[2] = '='
+    let nd = board.format_u32(digs[:], tx_n)
+    let mut i: i32 = 0
+    while i < nd {
+        line[3 + i] = digs[i]
+        i = i + 1
+    }
+    lcd.fill_rect(8, 28, 144, 16, board.color_black())
+    lcd.draw_text_n(8, 28, line[:], 3 + nd, board.color_green(), board.color_black())
+
+    line[0] = 'R'
+    line[1] = 'X'
+    line[2] = '='
+    let nr = board.format_u32(digs[:], rx_n)
+    i = 0
+    while i < nr {
+        line[3 + i] = digs[i]
+        i = i + 1
+    }
+    lcd.fill_rect(8, 44, 144, 16, board.color_black())
+    lcd.draw_text_n(8, 44, line[:], 3 + nr, board.color_cyan(), board.color_black())
+
+    line[0] = 'C'
+    line[1] = 'H'
+    line[2] = '='
+    let nc = board.format_u32(digs[:], last)
+    i = 0
+    while i < nc {
+        line[3 + i] = digs[i]
+        i = i + 1
+    }
+    lcd.fill_rect(8, 60, 100, 16, board.color_black())
+    lcd.draw_text_n(8, 60, line[:], 3 + nc, board.color_yellow(), board.color_black())
+    if last >= 32 {
+        if last <= 126 {
+            lcd.draw_char(120, 60, last, board.color_white(), board.color_black())
+        }
+    }
+}
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    lcd.fill(board.color_black())
+
+    let mut title: [8]i32
+    title[0] = 'U'
+    title[1] = 'S'
+    title[2] = 'B'
+    title[3] = ' '
+    title[4] = '0'
+    title[5] = '.'
+    title[6] = '1'
+    title[7] = '1'
+    lcd.draw_text_n(8, 8, title[:], 8, board.color_white(), board.color_black())
+
+    board.enable_usb_clocks()
+    let u = board.usb_cdc_out()
+
+    let mut banner: [12]i32
+    banner[0] = 'K'
+    banner[1] = 'L'
+    banner[2] = 'I'
+    banner[3] = 'N'
+    banner[4] = ' '
+    banner[5] = 'U'
+    banner[6] = 'S'
+    banner[7] = 'B'
+    banner[8] = 13
+    banner[9] = 10
+
+    let mut tx_n: i32 = 0
+    let mut rx_n: i32 = 0
+    let mut last: i32 = 0
+    let mut sent_banner = false
+
+    while true {
+        u.poll()
+        if u.configured() {
+            if !sent_banner {
+                board.usb_write_codes_n(u, banner[:], 10)
+                tx_n = tx_n + 10
+                sent_banner = true
+                paint_status(lcd, tx_n, rx_n, last)
+            }
+            let b = u.try_read_u8()
+            if b >= 0 {
+                while !u.write_u8(b) {
+                    u.poll()
+                }
+                rx_n = rx_n + 1
+                tx_n = tx_n + 1
+                last = b
+                paint_status(lcd, tx_n, rx_n, last)
+            }
+        }
+    }
+}
