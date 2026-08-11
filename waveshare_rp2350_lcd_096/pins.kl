@@ -37,6 +37,11 @@ pub fn lcd_miso_unused(): i32 {
     return 13
 }
 
+/// DMA channel for ST7735 bulk pixel TX (SPI1). Explicit — not hidden.
+pub fn lcd_dma_ch(): i32 {
+    return 0
+}
+
 pub fn lcd_width(): i32 {
     return 160
 }

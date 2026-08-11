@@ -6,6 +6,8 @@ import "github/klin-lang/machine_rp" machine
 
 pub struct Lcd {
     spi: machine.Spi
+    dma: machine.Dma
+    dreq: i32
     dc: machine.Pin
     cs: machine.Pin
     rst: machine.Pin
@@ -48,7 +50,7 @@ fn soft_reset(lcd: Lcd) {
     delay_ms(20)
 }
 
-/// Open SPI1 + control pins and run ST7735S init. `peri_clk_hz` = clk_peri (explicit).
+/// Open SPI1 + DMA + control pins and run ST7735S init. `peri_clk_hz` = clk_peri (explicit).
 pub fn lcd_out(peri_clk_hz: i32, spi_baud_hz: i32): Lcd {
     let spi = machine.spi_out_rp2350(
         lcd_spi(),
@@ -59,6 +61,7 @@ pub fn lcd_out(peri_clk_hz: i32, spi_baud_hz: i32): Lcd {
         spi_baud_hz,
         0
     )
+    let dma = machine.dma_out_rp2350(lcd_dma_ch())
     let dc = machine.pin_out_rp2350(lcd_dc())
     let cs = machine.pin_out_rp2350(lcd_cs())
     let rst = machine.pin_out_rp2350(lcd_rst())
@@ -69,6 +72,8 @@ pub fn lcd_out(peri_clk_hz: i32, spi_baud_hz: i32): Lcd {
 
     let lcd = Lcd{
         spi: spi,
+        dma: dma,
+        dreq: machine.dma_dreq_spi1_tx_rp2350(),
         dc: dc,
         cs: cs,
         rst: rst,
@@ -222,17 +227,13 @@ pub fn (lcd: Lcd) fill_rect(x: i32, y: i32, w: i32, h: i32, color: i32) {
     let y1 = y + h - 1
     lcd.set_window(x, y, x1, y1)
 
-    // Stream pixels with CS held low (faster than per-byte CS toggle).
+    // DMA→SPI1: 2-byte RGB565 pattern via read ring (machine_rp write_dma_repeat2).
     lcd.dc.high()
     lcd.cs.low()
     let lo = color & 255
     let hi = (color >> 8) & 255
-    let mut n = w * h
-    while n > 0 {
-        spi_put(lcd, lo)
-        spi_put(lcd, hi)
-        n = n - 1
-    }
+    let nbytes = w * h * 2
+    lcd.spi.write_dma_repeat2(lcd.dma, lo, hi, nbytes, lcd.dreq)
     lcd.cs.high()
 }
 
@@ -333,29 +334,36 @@ pub fn (lcd: Lcd) blit_mono8(x: i32, y: i32, rows: []i32, fg: i32, bg: i32) {
         return
     }
     lcd.set_window(x, y, x + 7, y + 7)
-    lcd.dc.high()
-    lcd.cs.low()
     let lo_fg = fg & 255
     let hi_fg = (fg >> 8) & 255
     let lo_bg = bg & 255
     let hi_bg = (bg >> 8) & 255
+    // 8×8×2 bytes on stack, then one DMA TX.
+    let mut buf: [128]u8
+    let mut tmp: [4]u8
+    let tp = cast(*mut i32, &tmp[0])
+    let mut i: i32 = 0
     let mut row: i32 = 0
     while row < 8 {
         let bits = rows[row]
         let mut col: i32 = 0
         while col < 8 {
             let on = (bits >> (7 - col)) & 1
+            let mut pix = (lo_bg & 255) | ((hi_bg & 255) << 8)
             if on != 0 {
-                spi_put(lcd, lo_fg)
-                spi_put(lcd, hi_fg)
-            } else {
-                spi_put(lcd, lo_bg)
-                spi_put(lcd, hi_bg)
+                pix = (lo_fg & 255) | ((hi_fg & 255) << 8)
             }
+            *tp = pix
+            buf[i] = tmp[0]
+            buf[i + 1] = tmp[1]
+            i = i + 2
             col = col + 1
         }
         row = row + 1
     }
+    lcd.dc.high()
+    lcd.cs.low()
+    lcd.spi.write_dma(lcd.dma, buf[:], lcd.dreq)
     lcd.cs.high()
 }
 
@@ -381,5 +389,6 @@ pub fn (lcd: Lcd) blit_mono8_trans(x: i32, y: i32, rows: []i32, fg: i32) {
 
 pub fn (lcd: Lcd) deinit() {
     lcd.backlight(false)
+    lcd.dma.deinit()
     lcd.spi.deinit()
 }
