@@ -15,19 +15,19 @@ deps:
 	  *) "$(KLIN)" get github/klin-lang/machine_rp@v0.11.0 ;; \
 	esac
 
-emit: out/ws2812_strip.c
+emit: out/lcd_pio_fill.c
 
-out/ws2812_strip.c out/ws2812_strip.link: ws2812_strip.kl $(wildcard $(ROOT)/waveshare_rp2350_lcd_096/*.kl)
+out/lcd_pio_fill.c out/lcd_pio_fill.link: lcd_pio_fill.kl $(wildcard $(ROOT)/waveshare_rp2350_lcd_096/*.kl)
 	@mkdir -p out
 	@case "$(KLIN)" in \
-	  *.dart) dart run "$(KLIN)" --emit-c ws2812_strip.kl ;; \
-	  *) "$(KLIN)" --emit-c ws2812_strip.kl ;; \
+	  *.dart) dart run "$(KLIN)" --emit-c lcd_pio_fill.kl ;; \
+	  *) "$(KLIN)" --emit-c lcd_pio_fill.kl ;; \
 	esac
 
-elf: ws2812_strip.elf
+elf: lcd_pio_fill.elf
 
-ws2812_strip.elf: linker.ld out/ws2812_strip.c out/ws2812_strip.link
-	$(CC) $(CFLAGS) -I. $(LDFLAGS) $$(cat out/ws2812_strip.link) out/ws2812_strip.c -o $@
+lcd_pio_fill.elf: linker.ld out/lcd_pio_fill.c out/lcd_pio_fill.link
+	$(CC) $(CFLAGS) -I. $(LDFLAGS) $$(cat out/lcd_pio_fill.link) out/lcd_pio_fill.c -o $@
 
 clean:
-	rm -rf out ws2812_strip.elf
+	rm -rf out lcd_pio_fill.elf
