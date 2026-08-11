@@ -5,7 +5,7 @@ import testing
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
 fn test_version() {
-    testing.assert_eq_i32(version(), 11)
+    testing.assert_eq_i32(version(), 12)
 }
 
 fn test_pin_map() {
@@ -97,4 +97,14 @@ fn test_powman_consts() {
 fn test_lcd_dma_ch() {
     testing.assert_eq_i32(lcd_dma_ch(), 0)
     testing.assert_eq_i32(lcd_spi(), 1)
+}
+
+fn test_lcd_pio_pins() {
+    testing.assert_eq_i32(lcd_pio(), 0)
+    testing.assert_eq_i32(lcd_pio_sm(), 1)
+    testing.assert_eq_i32(lcd_pio_prog_off(), 4)
+    testing.assert_eq_i32(lcd_pio_sys_hz(), 12000000)
+    testing.assert_eq_i32(lcd_pio_sm_hz(1000000), 2000000)
+    // MOSI must be SCLK+1 for consecutive SET pindirs.
+    testing.assert_eq_i32(lcd_mosi(), lcd_sclk() + 1)
 }

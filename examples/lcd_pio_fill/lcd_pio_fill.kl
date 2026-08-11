@@ -1,0 +1,23 @@
+/// Cycle solid colors via PIO-as-SPI (GP10/11 remuxed off SPI1).
+import "../../waveshare_rp2350_lcd_096" board
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    // clk_sys ≈ 12 MHz assumption; bit rate 1 MHz (SM @ 2 MHz).
+    let lcd = board.lcd_pio_out(12000000, 1000000)
+    lcd.backlight(true)
+
+    while true {
+        lcd.fill(board.color_red())
+        board.delay_ms(400)
+        lcd.fill(board.color_green())
+        board.delay_ms(400)
+        lcd.fill(board.color_blue())
+        board.delay_ms(400)
+        lcd.fill(board.color_white())
+        board.delay_ms(400)
+        lcd.fill(board.color_black())
+        board.delay_ms(400)
+    }
+}

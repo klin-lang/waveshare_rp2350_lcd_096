@@ -1,0 +1,444 @@
+/// ST7735S via PIO-as-SPI (MOSI+SCK on PIO; DC/CS/RST stay GPIO).
+/// Remuxes GP10/GP11 off SPI1 FUNCSEL. Shares PIO0 instr mem with WS2812
+/// (SM0 @0..=3); this path uses SM1 @ offset 4..=5. No hidden clocks.
+module waveshare_rp2350_lcd_096
+
+import "github/klin-lang/machine_rp" machine
+
+/// PIO-backed LCD (parallel to `Lcd` / `lcd_out` HW SPI path).
+pub struct LcdPio {
+    sm: machine.Pio
+    dma: machine.Dma
+    dreq: i32
+    dc: machine.Pin
+    cs: machine.Pin
+    rst: machine.Pin
+    bl: machine.Pin
+    width: i32
+    height: i32
+}
+
+/// PIO block for LCD SPI TX (explicit — not hidden).
+pub fn lcd_pio(): i32 {
+    return 0
+}
+
+/// State machine for LCD SPI TX. WS2812 uses SM0 — keep SM1.
+pub fn lcd_pio_sm(): i32 {
+    return 1
+}
+
+/// Instruction-memory offset for the 2-word SPI TX program (after WS2812 @0..=3).
+pub fn lcd_pio_prog_off(): i32 {
+    return 4
+}
+
+/// Same clock assumption as light-sleep / WS2812 helpers (explicit clk_sys).
+pub fn lcd_pio_sys_hz(): i32 {
+    return sleep_cpu_hz()
+}
+
+/// SM clock = 2× bit rate (one `out` + one `nop` per bit).
+pub fn lcd_pio_sm_hz(bit_hz: i32): i32 {
+    let mut b = bit_hz
+    if b < 1 {
+        b = 1
+    }
+    return b * 2
+}
+
+fn pio_put(lcd: LcdPio, b: i32) {
+    lcd.sm.put_u8(b)
+    lcd.sm.wait_tx_stall()
+}
+
+fn write_cmd_pio(lcd: LcdPio, cmd: i32) {
+    lcd.dc.low()
+    lcd.cs.low()
+    pio_put(lcd, cmd)
+    lcd.cs.high()
+}
+
+fn write_data_u8_pio(lcd: LcdPio, v: i32) {
+    lcd.dc.high()
+    lcd.cs.low()
+    pio_put(lcd, v)
+    lcd.cs.high()
+}
+
+fn write_color_pio(lcd: LcdPio, color: i32) {
+    write_data_u8_pio(lcd, color & 255)
+    write_data_u8_pio(lcd, (color >> 8) & 255)
+}
+
+fn soft_reset_pio(lcd: LcdPio) {
+    lcd.rst.high()
+    delay_ms(20)
+    lcd.rst.low()
+    delay_ms(20)
+    lcd.rst.high()
+    delay_ms(20)
+}
+
+/// Mode-0 SPI TX program: `out pins,1 side 0` / `nop side 1` (2 cycles/bit).
+fn lcd_pio_load_prog(sm: machine.Pio, offset: i32) {
+    let mut prog: [2]i32
+    prog[0] = machine.pio_encode_out_pins(1) | machine.pio_encode_sideset(1, 0)
+    prog[1] = machine.pio_encode_nop(0) | machine.pio_encode_sideset(1, 1)
+    sm.load(prog[:], offset)
+    sm.config_wrap(offset, offset + 1)
+}
+
+fn lcd_pio_configure(sm: machine.Pio, sclk: i32, mosi: i32, sys_hz: i32, bit_hz: i32) {
+    // Requires mosi == sclk + 1 for consecutive SET pindirs (board map: 10/11).
+    sm.gpio_init(sclk)
+    sm.gpio_init(mosi)
+    sm.config_sideset_pins(sclk, 1)
+    sm.config_out_pins(mosi, 1)
+    sm.config_set_pins(sclk, 2)
+    // shift left, autopull 8, join TX
+    sm.config_out_shift(0, 1, 8)
+    sm.config_fifo_join_tx()
+    let off = lcd_pio_prog_off()
+    lcd_pio_load_prog(sm, off)
+    let sm_hz = lcd_pio_sm_hz(bit_hz)
+    sm.config_clkdiv_frac(
+        machine.pio_clkdiv_int(sys_hz, sm_hz),
+        machine.pio_clkdiv_frac(sys_hz, sm_hz)
+    )
+    // OE for SCLK+MOSI
+    sm.exec(machine.pio_encode_set_pindirs(3, 0))
+    sm.active(1)
+}
+
+/// Open PIO-as-SPI LCD. `sys_clk_hz` = clk_sys; `bit_hz` = SCK bit rate (explicit).
+pub fn lcd_pio_out(sys_clk_hz: i32, bit_hz: i32): LcdPio {
+    let sm = machine.pio_out_rp2350(lcd_pio(), lcd_pio_sm())
+    lcd_pio_configure(sm, lcd_sclk(), lcd_mosi(), sys_clk_hz, bit_hz)
+    let dma = machine.dma_out_rp2350(lcd_dma_ch())
+    let dc = machine.pin_out_rp2350(lcd_dc())
+    let cs = machine.pin_out_rp2350(lcd_cs())
+    let rst = machine.pin_out_rp2350(lcd_rst())
+    let bl = machine.pin_out_rp2350(lcd_bl())
+    cs.high()
+    dc.high()
+    bl.high()
+
+    let lcd = LcdPio{
+        sm: sm,
+        dma: dma,
+        dreq: machine.dma_dreq_pio_tx_rp2350(lcd_pio(), lcd_pio_sm()),
+        dc: dc,
+        cs: cs,
+        rst: rst,
+        bl: bl,
+        width: lcd_width(),
+        height: lcd_height()
+    }
+    lcd_pio_init(lcd)
+    return lcd
+}
+
+/// `lcd_pio_out` with `lcd_pio_sys_hz()` as clk_sys.
+pub fn lcd_pio_out_default(bit_hz: i32): LcdPio {
+    return lcd_pio_out(lcd_pio_sys_hz(), bit_hz)
+}
+
+fn lcd_pio_init(lcd: LcdPio) {
+    soft_reset_pio(lcd)
+
+    write_cmd_pio(lcd, 0x11) // SLPOUT
+    delay_ms(120)
+
+    write_cmd_pio(lcd, 0x21) // INVON
+    write_cmd_pio(lcd, 0x21)
+
+    write_cmd_pio(lcd, 0xB1)
+    write_data_u8_pio(lcd, 0x05)
+    write_data_u8_pio(lcd, 0x3A)
+    write_data_u8_pio(lcd, 0x3A)
+
+    write_cmd_pio(lcd, 0xB2)
+    write_data_u8_pio(lcd, 0x05)
+    write_data_u8_pio(lcd, 0x3A)
+    write_data_u8_pio(lcd, 0x3A)
+
+    write_cmd_pio(lcd, 0xB3)
+    write_data_u8_pio(lcd, 0x05)
+    write_data_u8_pio(lcd, 0x3A)
+    write_data_u8_pio(lcd, 0x3A)
+    write_data_u8_pio(lcd, 0x05)
+    write_data_u8_pio(lcd, 0x3A)
+    write_data_u8_pio(lcd, 0x3A)
+
+    write_cmd_pio(lcd, 0xB4)
+    write_data_u8_pio(lcd, 0x03)
+
+    write_cmd_pio(lcd, 0xC0)
+    write_data_u8_pio(lcd, 0x62)
+    write_data_u8_pio(lcd, 0x02)
+    write_data_u8_pio(lcd, 0x04)
+
+    write_cmd_pio(lcd, 0xC1)
+    write_data_u8_pio(lcd, 0xC0)
+
+    write_cmd_pio(lcd, 0xC2)
+    write_data_u8_pio(lcd, 0x0D)
+    write_data_u8_pio(lcd, 0x00)
+
+    write_cmd_pio(lcd, 0xC3)
+    write_data_u8_pio(lcd, 0x8D)
+    write_data_u8_pio(lcd, 0x6A)
+
+    write_cmd_pio(lcd, 0xC4)
+    write_data_u8_pio(lcd, 0x8D)
+    write_data_u8_pio(lcd, 0xEE)
+
+    write_cmd_pio(lcd, 0xC5)
+    write_data_u8_pio(lcd, 0x0E)
+
+    write_cmd_pio(lcd, 0xE0)
+    write_data_u8_pio(lcd, 0x10)
+    write_data_u8_pio(lcd, 0x0E)
+    write_data_u8_pio(lcd, 0x02)
+    write_data_u8_pio(lcd, 0x03)
+    write_data_u8_pio(lcd, 0x0E)
+    write_data_u8_pio(lcd, 0x07)
+    write_data_u8_pio(lcd, 0x02)
+    write_data_u8_pio(lcd, 0x07)
+    write_data_u8_pio(lcd, 0x0A)
+    write_data_u8_pio(lcd, 0x12)
+    write_data_u8_pio(lcd, 0x27)
+    write_data_u8_pio(lcd, 0x37)
+    write_data_u8_pio(lcd, 0x00)
+    write_data_u8_pio(lcd, 0x0D)
+    write_data_u8_pio(lcd, 0x0E)
+    write_data_u8_pio(lcd, 0x10)
+
+    write_cmd_pio(lcd, 0xE1)
+    write_data_u8_pio(lcd, 0x10)
+    write_data_u8_pio(lcd, 0x0E)
+    write_data_u8_pio(lcd, 0x03)
+    write_data_u8_pio(lcd, 0x03)
+    write_data_u8_pio(lcd, 0x0F)
+    write_data_u8_pio(lcd, 0x06)
+    write_data_u8_pio(lcd, 0x02)
+    write_data_u8_pio(lcd, 0x08)
+    write_data_u8_pio(lcd, 0x0A)
+    write_data_u8_pio(lcd, 0x13)
+    write_data_u8_pio(lcd, 0x26)
+    write_data_u8_pio(lcd, 0x36)
+    write_data_u8_pio(lcd, 0x00)
+    write_data_u8_pio(lcd, 0x0D)
+    write_data_u8_pio(lcd, 0x0E)
+    write_data_u8_pio(lcd, 0x10)
+
+    write_cmd_pio(lcd, 0x3A) // COLMOD RGB565
+    write_data_u8_pio(lcd, 0x05)
+
+    write_cmd_pio(lcd, 0x36) // MADCTL landscape
+    write_data_u8_pio(lcd, 0xA8)
+
+    write_cmd_pio(lcd, 0x29) // DISPON
+}
+
+pub fn (lcd: LcdPio) backlight(on: bool) {
+    if on {
+        lcd.bl.high()
+    } else {
+        lcd.bl.low()
+    }
+}
+
+pub fn (lcd: LcdPio) set_window(x0: i32, y0: i32, x1: i32, y1: i32) {
+    let xs = x0 + lcd_x_offset()
+    let xe = x1 + lcd_x_offset()
+    let ys = y0 + lcd_y_offset()
+    let ye = y1 + lcd_y_offset()
+
+    write_cmd_pio(lcd, 0x2A) // CASET
+    write_data_u8_pio(lcd, 0x00)
+    write_data_u8_pio(lcd, xs)
+    write_data_u8_pio(lcd, 0x00)
+    write_data_u8_pio(lcd, xe)
+
+    write_cmd_pio(lcd, 0x2B) // RASET
+    write_data_u8_pio(lcd, 0x00)
+    write_data_u8_pio(lcd, ys)
+    write_data_u8_pio(lcd, 0x00)
+    write_data_u8_pio(lcd, ye)
+
+    write_cmd_pio(lcd, 0x2C) // RAMWR
+}
+
+pub fn (lcd: LcdPio) fill(color: i32) {
+    lcd.fill_rect(0, 0, lcd.width, lcd.height, color)
+}
+
+pub fn (lcd: LcdPio) fill_rect(x: i32, y: i32, w: i32, h: i32, color: i32) {
+    if w <= 0 {
+        return
+    }
+    if h <= 0 {
+        return
+    }
+    let x1 = x + w - 1
+    let y1 = y + h - 1
+    lcd.set_window(x, y, x1, y1)
+
+    lcd.dc.high()
+    lcd.cs.low()
+    let lo = color & 255
+    let hi = (color >> 8) & 255
+    let nbytes = w * h * 2
+    lcd.sm.write_dma_repeat2(lcd.dma, lo, hi, nbytes, lcd.dreq)
+    lcd.cs.high()
+}
+
+pub fn (lcd: LcdPio) pixel(x: i32, y: i32, color: i32) {
+    if x < 0 {
+        return
+    }
+    if y < 0 {
+        return
+    }
+    if x >= lcd.width {
+        return
+    }
+    if y >= lcd.height {
+        return
+    }
+    lcd.set_window(x, y, x, y)
+    write_color_pio(lcd, color)
+}
+
+pub fn (lcd: LcdPio) hline(x: i32, y: i32, w: i32, color: i32) {
+    lcd.fill_rect(x, y, w, 1, color)
+}
+
+pub fn (lcd: LcdPio) vline(x: i32, y: i32, h: i32, color: i32) {
+    lcd.fill_rect(x, y, 1, h, color)
+}
+
+pub fn (lcd: LcdPio) draw_char(x: i32, y: i32, ch: i32, fg: i32, bg: i32) {
+    let mut col: i32 = 0
+    while col < 5 {
+        let bits = font5x7_col(ch, col)
+        let mut row: i32 = 0
+        while row < 7 {
+            let on = (bits >> row) & 1
+            let color = pick(on != 0) {
+                fg
+            } {
+                bg
+            }
+            lcd.pixel(x + col, y + row, color)
+            row = row + 1
+        }
+        lcd.pixel(x + col, y + 7, bg)
+        col = col + 1
+    }
+    lcd.fill_rect(x + 5, y, 1, 8, bg)
+}
+
+pub fn (lcd: LcdPio) draw_text(x: i32, y: i32, chars: []i32, fg: i32, bg: i32) {
+    lcd.draw_text_n(x, y, chars, chars.len, fg, bg)
+}
+
+pub fn (lcd: LcdPio) draw_text_n(
+    x: i32,
+    y: i32,
+    chars: []i32,
+    n: i32,
+    fg: i32,
+    bg: i32
+) {
+    let mut lim = n
+    if lim > chars.len {
+        lim = chars.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    let mut cx = x
+    while i < lim {
+        lcd.draw_char(cx, y, chars[i], fg, bg)
+        cx = cx + font_char_w()
+        i = i + 1
+    }
+}
+
+pub fn (lcd: LcdPio) blit_mono8(x: i32, y: i32, rows: []i32, fg: i32, bg: i32) {
+    if rows.len < 8 {
+        return
+    }
+    if x < 0 {
+        return
+    }
+    if y < 0 {
+        return
+    }
+    if x + 8 > lcd.width {
+        return
+    }
+    if y + 8 > lcd.height {
+        return
+    }
+    lcd.set_window(x, y, x + 7, y + 7)
+    let lo_fg = fg & 255
+    let hi_fg = (fg >> 8) & 255
+    let lo_bg = bg & 255
+    let hi_bg = (bg >> 8) & 255
+    let mut buf: [128]u8
+    let mut tmp: [4]u8
+    let tp = cast(*mut i32, &tmp[0])
+    let mut i: i32 = 0
+    let mut row: i32 = 0
+    while row < 8 {
+        let bits = rows[row]
+        let mut col: i32 = 0
+        while col < 8 {
+            let on = (bits >> (7 - col)) & 1
+            let mut pix = (lo_bg & 255) | ((hi_bg & 255) << 8)
+            if on != 0 {
+                pix = (lo_fg & 255) | ((hi_fg & 255) << 8)
+            }
+            *tp = pix
+            buf[i] = tmp[0]
+            buf[i + 1] = tmp[1]
+            i = i + 2
+            col = col + 1
+        }
+        row = row + 1
+    }
+    lcd.dc.high()
+    lcd.cs.low()
+    lcd.sm.write_dma(lcd.dma, buf[:], lcd.dreq)
+    lcd.cs.high()
+}
+
+pub fn (lcd: LcdPio) blit_mono8_trans(x: i32, y: i32, rows: []i32, fg: i32) {
+    if rows.len < 8 {
+        return
+    }
+    let mut row: i32 = 0
+    while row < 8 {
+        let bits = rows[row]
+        let mut col: i32 = 0
+        while col < 8 {
+            let on = (bits >> (7 - col)) & 1
+            if on != 0 {
+                lcd.pixel(x + col, y + row, fg)
+            }
+            col = col + 1
+        }
+        row = row + 1
+    }
+}
+
+pub fn (lcd: LcdPio) deinit() {
+    lcd.backlight(false)
+    lcd.dma.deinit()
+    lcd.sm.deinit()
+}
