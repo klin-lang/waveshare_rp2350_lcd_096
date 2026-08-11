@@ -1,0 +1,37 @@
+/// Hazard3 RISC-V twin of lcd_text — same Klin LCD code, RV32 crt0 + IMAGE_DEF.
+import "../../waveshare_rp2350_lcd_096" board
+
+@[link("startup.S")]
+@[link("image_def.S")]
+@[link("mem.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    lcd.fill(board.color_black())
+
+    let mut line: [16]i32
+    line[0] = 'K'
+    line[1] = 'L'
+    line[2] = 'I'
+    line[3] = 'N'
+    line[4] = ' '
+    line[5] = 'R'
+    line[6] = 'V'
+    line[7] = '3'
+    line[8] = '2'
+    lcd.draw_text_n(8, 28, line[:], 9, board.color_green(), board.color_black())
+
+    let mut sub: [12]i32
+    sub[0] = 'H'
+    sub[1] = 'A'
+    sub[2] = 'Z'
+    sub[3] = 'A'
+    sub[4] = 'R'
+    sub[5] = 'D'
+    sub[6] = '3'
+    lcd.draw_text_n(8, 44, sub[:], 7, board.color_cyan(), board.color_black())
+
+    while true {
+        board.delay_ms(500)
+    }
+}
