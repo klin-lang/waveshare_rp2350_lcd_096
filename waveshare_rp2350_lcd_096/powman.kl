@@ -1,0 +1,171 @@
+/// RP2350 POWMAN helpers — timer alarm wake + switched-core power-down.
+/// Wake reboots the cores (count lives in POWMAN scratch). Arm-oriented demos.
+/// Passworded writes use SET/CLR aliases (+0x2000 / +0x3000). Explicit — no hidden clocks.
+module waveshare_rp2350_lcd_096
+
+fn powman_base(): i32 {
+    return 0x40100000
+}
+
+/// Top-16 password for POWMAN writes (`0x5afe`).
+pub fn powman_password(): i32 {
+    return 0x5afe0000
+}
+
+fn powman_reg(offset: i32): *mut volatile i32 {
+    return cast(*mut volatile i32, powman_base() + offset)
+}
+
+fn powman_set_bits(offset: i32, bits: i32) {
+    let p = cast(*mut volatile i32, powman_base() + 0x2000 + offset)
+    *p = powman_password() | bits
+}
+
+fn powman_clr_bits(offset: i32, bits: i32) {
+    let p = cast(*mut volatile i32, powman_base() + 0x3000 + offset)
+    *p = powman_password() | bits
+}
+
+/// Full register write (low 16 bits of `value` only — POWMAN password rule).
+fn powman_write16(offset: i32, value: i32) {
+    let p = powman_reg(offset)
+    *p = powman_password() | (value & 65535)
+}
+
+/// Scratch 0..=7 — persists across switched-core power-down (no password).
+pub fn powman_scratch_read(i: i32): i32 {
+    let mut n = i
+    if n < 0 {
+        n = 0
+    }
+    if n > 7 {
+        n = 7
+    }
+    let p = powman_reg(0xb0 + n * 4)
+    return *p
+}
+
+pub fn powman_scratch_write(i: i32, v: i32) {
+    let mut n = i
+    if n < 0 {
+        n = 0
+    }
+    if n > 7 {
+        n = 7
+    }
+    let p = powman_reg(0xb0 + n * 4)
+    *p = v
+}
+
+/// 1 if last reset followed switched-core power-down (POWMAN wake).
+pub fn powman_woke_from_swcore_pd(): i32 {
+    let chip_reset = powman_reg(0x2c)
+    // HAD_SWCORE_PD bit 25
+    if (*chip_reset & (1 << 25)) != 0 {
+        return 1
+    }
+    return 0
+}
+
+/// Last switched-core power-up source (0=chip reset, 6=alarm, …).
+pub fn powman_last_swcore_pwrup(): i32 {
+    let p = powman_reg(0xa0)
+    return *p & 127
+}
+
+/// Start POWMAN 1 kHz timer from LPOSC (default OTP/reset trim). Time set to 0.
+pub fn powman_timer_start_lposc() {
+    // Stop
+    powman_clr_bits(0x88, 2)
+    // USE_LPOSC (bit 8); leave LPOSC_FREQ_* at reset (~32.768 kHz)
+    powman_set_bits(0x88, 1 << 8)
+    // Zero time (must be stopped)
+    powman_write16(0x6c, 0)
+    powman_write16(0x68, 0)
+    powman_write16(0x64, 0)
+    powman_write16(0x60, 0)
+    // RUN
+    powman_set_bits(0x88, 2)
+    // Wait USING_LPOSC (bit 17)
+    let timer = powman_reg(0x88)
+    let mut spins: i32 = 0
+    while (*timer & (1 << 17)) == 0 {
+        spins = spins + 1
+        if spins > 1000000 {
+            break
+        }
+    }
+}
+
+/// Low 32 bits of POWMAN timer (ms). Enough for short demo sleeps.
+pub fn powman_timer_ms(): i32 {
+    let lo = powman_reg(0x74)
+    return *lo
+}
+
+/// Arm alarm at `now + ms` and enable power-up on alarm. Clamps `ms` to 1..=60000.
+pub fn powman_alarm_in_ms(ms: i32) {
+    let mut m = ms
+    if m < 1 {
+        m = 1
+    }
+    if m > 60000 {
+        m = 60000
+    }
+    let now = powman_timer_ms()
+    let target = now + m
+    // Disable alarm while programming
+    powman_clr_bits(0x88, 1 << 4)
+    powman_write16(0x84, target & 65535)
+    powman_write16(0x80, (target >> 16) & 65535)
+    powman_write16(0x7c, 0)
+    powman_write16(0x78, 0)
+    // Clear sticky ALARM (bit 6)
+    powman_clr_bits(0x88, 1 << 6)
+    // ALARM_ENAB | PWRUP_ON_ALARM
+    powman_set_bits(0x88, (1 << 4) | (1 << 5))
+    // INTE.TIMER
+    powman_set_bits(0xe4, 1 << 1)
+}
+
+/// Request power-down of SWCORE + XIP + SRAM0/1. Returns 1 when WAITING (caller must WFI).
+/// On success the CPU does not return — wake reboots from flash.
+pub fn powman_enter_swcore_off(): i32 {
+    // Debugger must not block power-down
+    powman_set_bits(0xa4, 1)
+    // Unlock VREG for LP entry
+    powman_set_bits(0x04, 1 << 13)
+    // SEQ_CFG: clear HW_PWRUP_SRAM* so OFF→ON on wake is allowed
+    powman_clr_bits(0x34, 3)
+    // Normal flash boot after wake
+    let b0 = powman_reg(0xd0)
+    let b1 = powman_reg(0xd4)
+    let b2 = powman_reg(0xd8)
+    let b3 = powman_reg(0xdc)
+    *b0 = 0
+    *b1 = 0
+    *b2 = 0
+    *b3 = 0
+    // Clear REQ_IGNORED (WC)
+    powman_clr_bits(0x38, 1 << 8)
+    // REQ all domains powered down: HW bits 7:4 = 0xf → value 0xf0
+    // (API state 0 = all off; write (~0)<<4)
+    powman_write16(0x38, 0xf0)
+    let state = powman_reg(0x38)
+    if (*state & (1 << 8)) != 0 {
+        // ignored
+        return 0
+    }
+    if (*state & (1 << 10)) != 0 {
+        // BAD_SW_REQ
+        return 0
+    }
+    let mut spins: i32 = 0
+    while (*state & (1 << 12)) == 0 {
+        spins = spins + 1
+        if spins > 100000 {
+            return 0
+        }
+    }
+    return 1
+}

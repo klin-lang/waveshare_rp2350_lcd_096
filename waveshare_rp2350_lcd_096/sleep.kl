@@ -1,6 +1,6 @@
 /// Light-sleep helpers (SysTick reload math). The WFI loop lives in the app
 /// (`examples/sleep_demo`) so host `klin test` stays free of ARM `asm`.
-/// Not POWMAN deep sleep / dormant — see README.
+/// For POWMAN switched-core power-down see `powman.kl` / `examples/powman_demo`.
 module waveshare_rp2350_lcd_096
 
 /// Assumed `clk_sys` for SysTick reload math (board demos use ~12 MHz peri).
