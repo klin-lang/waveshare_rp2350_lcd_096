@@ -1,11 +1,17 @@
-/// Bit-bang WS2812 / NeoPixel on a GPIO (external strip). No PIO, no heap.
-/// Timing loops assume ~`ws2812_cpu_hz()`; tune `ws2812_t*` on hardware if needed.
-/// Buffer format: `pixels[i] = 0x00RRGGBB` (wire order is GRB).
+/// External WS2812 / NeoPixel on a GPIO via PIO (side-set program).
+/// Bit-bang remains as `ws2812_bb_*` escape hatch. No heap.
+/// Buffer format: `pixels[i] = 0x00RRGGBB` (wire order is GRB; FIFO left-aligned).
 module waveshare_rp2350_lcd_096
 
 import "github/klin-lang/machine_rp" machine
 
+/// PIO-backed strip (default path).
 pub struct Ws2812 {
+    sm: machine.Pio
+}
+
+/// Bit-bang strip (CPU timing loops). Prefer `Ws2812` / PIO.
+pub struct Ws2812Bb {
     pin: machine.Pin
 }
 
@@ -14,7 +20,13 @@ pub fn ws2812_cpu_hz(): i32 {
     return sleep_cpu_hz()
 }
 
-/// Tunable busy-loop counts for one bit (at ~12 MHz). Increase if bits are short.
+/// WS2812 bit time target (Hz) for PIO clkdiv: 800 kHz × (T1+T2+T3).
+pub fn ws2812_pio_bit_hz(): i32 {
+    // T1=3, T2=3, T3=4 → 10 cycles/bit @ 800 kHz → 8 MHz SM clock
+    return 8000000
+}
+
+/// Tunable busy-loop counts for bit-bang (at ~12 MHz). Increase if bits are short.
 pub fn ws2812_t0h(): i32 {
     return 1
 }
@@ -36,59 +48,63 @@ pub fn ws2812_rgb(r: i32, g: i32, b: i32): i32 {
     return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)
 }
 
-pub fn ws2812_out(gpio: i32): Ws2812 {
-    let p = machine.pin_out_rp2350(gpio)
-    p.low()
-    return Ws2812{ pin: p }
+/// Pico-style WS2812 program (side_set 1, T1=3 T2=3 T3=4), wrap 0..=3.
+fn ws2812_load_prog(sm: machine.Pio) {
+    let mut prog: [4]i32
+    // out x, 1  side 0 [3]
+    prog[0] = machine.pio_encode_out_x(1) | machine.pio_encode_sideset(1, 0) | machine.pio_encode_delay(3)
+    // jmp !x, 3 side 1 [2]
+    prog[1] = machine.pio_encode_jmp_not_x(3) | machine.pio_encode_sideset(1, 1) | machine.pio_encode_delay(2)
+    // jmp 0     side 1 [2]
+    prog[2] = machine.pio_encode_jmp(0) | machine.pio_encode_sideset(1, 1) | machine.pio_encode_delay(2)
+    // nop       side 0 [2]
+    prog[3] = machine.pio_encode_nop(0) | machine.pio_encode_sideset(1, 0) | machine.pio_encode_delay(2)
+    sm.load(prog[:], 0)
+    sm.config_wrap(0, 3)
 }
 
-/// Open strip on `ws2812_data()` (GP15).
+fn ws2812_configure(sm: machine.Pio, gpio: i32, sys_clk_hz: i32) {
+    sm.gpio_init(gpio)
+    sm.config_sideset_pins(gpio, 1)
+    sm.config_set_pins(gpio, 1)
+    // shift left, autopull 24, join TX
+    sm.config_out_shift(0, 1, 24)
+    sm.config_fifo_join_tx()
+    ws2812_load_prog(sm)
+    let sm_hz = ws2812_pio_bit_hz()
+    sm.config_clkdiv_frac(
+        machine.pio_clkdiv_int(sys_clk_hz, sm_hz),
+        machine.pio_clkdiv_frac(sys_clk_hz, sm_hz)
+    )
+    // SET pindirs via exec (side-set drives levels; OE must be out)
+    sm.exec(machine.pio_encode_set_pindirs(1, 0))
+    sm.active(1)
+}
+
+/// PIO0 SM0 on `gpio`. `sys_clk_hz` = clk_sys (explicit).
+pub fn ws2812_out_hz(gpio: i32, sys_clk_hz: i32): Ws2812 {
+    let sm = machine.pio_out_rp2350(0, 0)
+    ws2812_configure(sm, gpio, sys_clk_hz)
+    return Ws2812{ sm: sm }
+}
+
+/// PIO strip using `ws2812_cpu_hz()` as clk_sys.
+pub fn ws2812_out(gpio: i32): Ws2812 {
+    return ws2812_out_hz(gpio, ws2812_cpu_hz())
+}
+
+/// Open strip on `ws2812_data()` (GP15) via PIO.
 pub fn ws2812_out_default(): Ws2812 {
     return ws2812_out(ws2812_data())
 }
 
-fn spin(n: i32) {
-    let mut i: i32 = 0
-    while i < n {
-        i = i + 1
+fn wait_tx_empty(sm: machine.Pio) {
+    let bit = 1 << (24 + sm.sm)
+    while (*(sm.fstat) & bit) == 0 {
     }
 }
 
-fn send_bit(w: Ws2812, one: i32) {
-    // Direct SIO set/clr — avoid method-call overhead in the bit window.
-    *(w.pin.out_set) = w.pin.mask
-    if one != 0 {
-        spin(ws2812_t1h())
-    } else {
-        spin(ws2812_t0h())
-    }
-    *(w.pin.out_clr) = w.pin.mask
-    if one != 0 {
-        spin(ws2812_t1l())
-    } else {
-        spin(ws2812_t0l())
-    }
-}
-
-fn send_byte(w: Ws2812, b: i32) {
-    let mut bit: i32 = 7
-    while bit >= 0 {
-        send_bit(w, (b >> bit) & 1)
-        bit = bit - 1
-    }
-}
-
-/// Write GRB for one `0x00RRGGBB` pixel.
-fn send_pixel(w: Ws2812, rgb: i32) {
-    let r = (rgb >> 16) & 255
-    let g = (rgb >> 8) & 255
-    let b = rgb & 255
-    send_byte(w, g)
-    send_byte(w, r)
-    send_byte(w, b)
-}
-
-/// Shift out the first `n` pixels (clamped to `pixels.len`), then ≥50 µs reset low.
+/// Shift out the first `n` pixels (clamped), then ≥50 µs reset low.
 pub fn (w: Ws2812) show(pixels: []i32, n: i32) {
     let mut lim = n
     if lim > pixels.len {
@@ -99,11 +115,22 @@ pub fn (w: Ws2812) show(pixels: []i32, n: i32) {
     }
     let mut i: i32 = 0
     while i < lim {
-        send_pixel(w, pixels[i])
+        let rgb = pixels[i]
+        let r = (rgb >> 16) & 255
+        let g = (rgb >> 8) & 255
+        let b = rgb & 255
+        // GRB left-aligned in bits 31:8 for shift-left autopull-24
+        let grb = (g << 24) | (r << 16) | (b << 8)
+        w.sm.put_u32(grb)
         i = i + 1
     }
-    // Reset latch — busy_wait scale from delay_ms (~8000 iters/ms) → ~100 iters ≈ 50µs+
+    wait_tx_empty(w.sm)
+    // Reset latch — busy_wait scale from delay_ms (~8000 iters/ms) → ~200 ≈ 50µs+
     busy_wait(200)
+}
+
+pub fn (w: Ws2812) deinit() {
+    w.sm.deinit()
 }
 
 /// Fill `pixels[0..n)` with the same RGB color (does not show).
@@ -120,4 +147,71 @@ pub fn ws2812_fill(pixels: []i32, n: i32, rgb: i32) {
         pixels[i] = rgb
         i = i + 1
     }
+}
+
+// --- bit-bang escape hatch -------------------------------------------------
+
+pub fn ws2812_bb_out(gpio: i32): Ws2812Bb {
+    let p = machine.pin_out_rp2350(gpio)
+    p.low()
+    return Ws2812Bb{ pin: p }
+}
+
+pub fn ws2812_bb_out_default(): Ws2812Bb {
+    return ws2812_bb_out(ws2812_data())
+}
+
+fn spin(n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        i = i + 1
+    }
+}
+
+fn bb_send_bit(w: Ws2812Bb, one: i32) {
+    *(w.pin.out_set) = w.pin.mask
+    if one != 0 {
+        spin(ws2812_t1h())
+    } else {
+        spin(ws2812_t0h())
+    }
+    *(w.pin.out_clr) = w.pin.mask
+    if one != 0 {
+        spin(ws2812_t1l())
+    } else {
+        spin(ws2812_t0l())
+    }
+}
+
+fn bb_send_byte(w: Ws2812Bb, b: i32) {
+    let mut bit: i32 = 7
+    while bit >= 0 {
+        bb_send_bit(w, (b >> bit) & 1)
+        bit = bit - 1
+    }
+}
+
+fn bb_send_pixel(w: Ws2812Bb, rgb: i32) {
+    let r = (rgb >> 16) & 255
+    let g = (rgb >> 8) & 255
+    let b = rgb & 255
+    bb_send_byte(w, g)
+    bb_send_byte(w, r)
+    bb_send_byte(w, b)
+}
+
+pub fn (w: Ws2812Bb) show(pixels: []i32, n: i32) {
+    let mut lim = n
+    if lim > pixels.len {
+        lim = pixels.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    while i < lim {
+        bb_send_pixel(w, pixels[i])
+        i = i + 1
+    }
+    busy_wait(200)
 }
