@@ -1,0 +1,72 @@
+/// External WS2812 on GP15: LCD status + 8-pixel chase.
+/// Wire: DIN→GP15, GND common, 5V (or level-shift) per strip datasheet.
+import "../../waveshare_rp2350_lcd_096" board
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+    lcd.fill(board.color_black())
+
+    let mut title: [8]i32
+    title[0] = 'W'
+    title[1] = 'S'
+    title[2] = '2'
+    title[3] = '8'
+    title[4] = '1'
+    title[5] = '2'
+    lcd.draw_text_n(8, 8, title[:], 6, board.color_white(), board.color_black())
+
+    let mut pin: [8]i32
+    pin[0] = 'G'
+    pin[1] = 'P'
+    pin[2] = '1'
+    pin[3] = '5'
+    lcd.draw_text_n(8, 28, pin[:], 4, board.color_cyan(), board.color_black())
+
+    let strip = board.ws2812_out_default()
+    let mut pixels: [8]i32
+    let n: i32 = 8
+    board.ws2812_fill(pixels[:], n, board.ws2812_rgb(0, 0, 0))
+    strip.show(pixels[:], n)
+
+    let mut head: i32 = 0
+    while true {
+        board.ws2812_fill(pixels[:], n, board.ws2812_rgb(0, 0, 0))
+        // dim trail
+        let mut t: i32 = 0
+        while t < 3 {
+            let mut idx = head - t
+            if idx < 0 {
+                idx = idx + n
+            }
+            let mut bri = 40 - t * 12
+            if bri < 0 {
+                bri = 0
+            }
+            pixels[idx] = board.ws2812_rgb(bri, 0, bri / 2)
+            t = t + 1
+        }
+        strip.show(pixels[:], n)
+
+        let mut line: [12]i32
+        let mut digs: [8]i32
+        line[0] = 'I'
+        line[1] = '='
+        let nd = board.format_u32(digs[:], head)
+        let mut i: i32 = 0
+        while i < nd {
+            line[2 + i] = digs[i]
+            i = i + 1
+        }
+        lcd.fill_rect(8, 48, 80, 16, board.color_black())
+        lcd.draw_text_n(8, 48, line[:], 2 + nd, board.color_green(), board.color_black())
+
+        head = head + 1
+        if head >= n {
+            head = 0
+        }
+        board.delay_ms(80)
+    }
+}
