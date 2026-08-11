@@ -5,7 +5,7 @@ import testing
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
 fn test_version() {
-    testing.assert_eq_i32(version(), 4)
+    testing.assert_eq_i32(version(), 5)
 }
 
 fn test_pin_map() {
@@ -69,4 +69,13 @@ fn test_sprites8() {
     testing.assert(rows[3] != 0)
     sprite_arrow_r(rows[:])
     testing.assert_eq_i32(rows[3], 0xFF)
+}
+
+fn test_sleep_reload() {
+    testing.assert_eq_i32(sleep_cpu_hz(), 12000000)
+    testing.assert_eq_i32(sleep_systick_reload(0), 0)
+    // 1 ms @ 12 MHz → 12000 ticks → reload 11999
+    testing.assert_eq_i32(sleep_systick_reload(1), 11999)
+    testing.assert(sleep_systick_reload(1000) > 0)
+    testing.assert(sleep_systick_reload(1000) <= 0xFFFFFF)
 }
