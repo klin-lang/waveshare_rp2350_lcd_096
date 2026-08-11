@@ -1,4 +1,4 @@
-/// External WS2812 on GP15: LCD status + 8-pixel chase.
+/// External WS2812 on GP15 via PIO0 SM0: LCD status + 8-pixel chase.
 /// Wire: DIN→GP15, GND common, 5V (or level-shift) per strip datasheet.
 import "../../waveshare_rp2350_lcd_096" board
 

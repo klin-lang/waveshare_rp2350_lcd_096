@@ -11,8 +11,8 @@ all: emit
 
 deps:
 	@case "$(KLIN)" in \
-	  *.dart) dart run "$(KLIN)" get github/klin-lang/machine_rp@v0.6.0 ;; \
-	  *) "$(KLIN)" get github/klin-lang/machine_rp@v0.6.0 ;; \
+	  *.dart) dart run "$(KLIN)" get github/klin-lang/machine_rp@v0.8.0 ;; \
+	  *) "$(KLIN)" get github/klin-lang/machine_rp@v0.8.0 ;; \
 	esac
 
 emit: out/riscv_lcd_text.c
