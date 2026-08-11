@@ -1,0 +1,106 @@
+/// Light sleep demo: backlight off → SysTick + WFI → wake counter on LCD.
+/// Not POWMAN deep sleep. No onboard USER button — timer wake only.
+import "../../waveshare_rp2350_lcd_096" board
+
+@[cimport, codename("sleep_demo_wfi")]
+fn sleep_demo_wfi()
+
+/// Clears SysTick so `wfi` returns once per chunk.
+@[isr("SysTick_Handler")]
+fn systick_wake_isr() {
+    let csr = cast(*mut volatile i32, 0xE000E010)
+    *csr = 0
+}
+
+fn sleep_ms(ms: i32) {
+    let mut left = ms
+    if left < 0 {
+        left = 0
+    }
+    let csr = cast(*mut volatile i32, 0xE000E010)
+    let rvr = cast(*mut volatile i32, 0xE000E014)
+    let cvr = cast(*mut volatile i32, 0xE000E018)
+    while left > 0 {
+        let mut chunk = left
+        if chunk > 1000 {
+            chunk = 1000
+        }
+        let reload = board.sleep_systick_reload(chunk)
+        if reload < 1 {
+            return
+        }
+        *csr = 0
+        *rvr = reload
+        *cvr = 0
+        // CLKSOURCE | TICKINT | ENABLE
+        *csr = (1 << 2) | (1 << 1) | 1
+        sleep_demo_wfi()
+        *csr = 0
+        left = left - chunk
+    }
+}
+
+fn paint(lcd: board.Lcd, label: []i32, n: i32, wakes: i32) {
+    lcd.fill(board.color_black())
+    lcd.draw_text_n(8, 8, label, n, board.color_white(), board.color_black())
+    let mut line: [16]i32
+    let mut digs: [12]i32
+    line[0] = 'N'
+    line[1] = '='
+    let nd = board.format_u32(digs[:], wakes)
+    let mut i: i32 = 0
+    while i < nd {
+        line[2 + i] = digs[i]
+        i = i + 1
+    }
+    lcd.draw_text_n(8, 28, line[:], 2 + nd, board.color_green(), board.color_black())
+}
+
+@[link("startup.s")]
+@[link("sleep_wfi.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+
+    let mut title: [10]i32
+    title[0] = 'S'
+    title[1] = 'L'
+    title[2] = 'E'
+    title[3] = 'E'
+    title[4] = 'P'
+    title[5] = ' '
+    title[6] = '0'
+    title[7] = '.'
+    title[8] = '5'
+    let mut awake: [8]i32
+    awake[0] = 'A'
+    awake[1] = 'W'
+    awake[2] = 'A'
+    awake[3] = 'K'
+    awake[4] = 'E'
+    let mut sleeping: [8]i32
+    sleeping[0] = 'Z'
+    sleeping[1] = 'Z'
+    sleeping[2] = 'Z'
+    sleeping[3] = '.'
+    sleeping[4] = '.'
+    sleeping[5] = '.'
+
+    let mut wakes: i32 = 0
+    paint(lcd, title[:], 9, wakes)
+    board.delay_ms(1200)
+
+    while true {
+        lcd.fill_rect(8, 8, 144, 16, board.color_black())
+        lcd.draw_text_n(8, 8, sleeping[:], 6, board.color_yellow(), board.color_black())
+        lcd.backlight(false)
+
+        sleep_ms(2000)
+
+        wakes = wakes + 1
+        lcd.backlight(true)
+        paint(lcd, awake[:], 5, wakes)
+        board.delay_ms(1200)
+    }
+}

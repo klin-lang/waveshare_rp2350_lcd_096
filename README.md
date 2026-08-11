@@ -6,11 +6,11 @@ in [Klin](https://github.com/klin-lang/klin).
 Not a MicroPython port. No GC, no hidden heap, no hidden clocks.
 
 Chip API: [`machine_rp`](https://github.com/klin-lang/machine_rp) (`*_rp2350`).
-This package adds **pin map + ST7735S LCD + font + ADC + UART0 + 8×8 sprites** for this board only.
+This package adds **pin map + ST7735S LCD + font + ADC + UART0 + sprites + light-sleep helpers** for this board only.
 
 Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main/issues/095-board-waveshare-rp2350-lcd-096.md), chip targets [062](https://github.com/klin-lang/klin/blob/main/issues/062-targets-esp-rp.md).
 
-## Status (`@v0.4.0`)
+## Status (`@v0.5.0`)
 
 | Piece | Status |
 |---|---|
@@ -18,14 +18,16 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | ST7735S 160×80 (`lcd_out`, `fill`, `fill_rect`, lines) | ✅ |
 | Font 5×7 (`draw_char` / `draw_text` / `draw_text_n`) | ✅ |
 | 8×8 mono sprites (`blit_mono8` / `blit_mono8_trans` + stock icons) | ✅ |
+| Light sleep helpers (`sleep_cpu_hz` / `sleep_systick_reload`) + `sleep_demo` | ✅ |
 | `enable_clk_adc` + temp / battery mV helpers | ✅ |
 | UART0 helpers (`uart0_out`, `uart_write_codes`) | ✅ |
 | Backlight GPIO | ✅ |
-| Examples (`…`, `uart_console`, `lcd_sprites`) | ✅ |
+| Examples (`…`, `uart_console`, `lcd_sprites`, `sleep_demo`) | ✅ |
 | Onboard WS2812 | — not in CircuitPython board def; use external strip later |
+| POWMAN deep sleep / dormant | later |
 | PIO / DMA LCD | later |
 
-`version()` → `4`.
+`version()` → `5`.
 
 ## Pins (LCD)
 
@@ -49,6 +51,8 @@ UART0 is the Pico-compatible header mapping (Arduino `SERIAL1`). Type-C is **nat
 
 Sprites: 8 row bytes, **bit7 = leftmost** pixel. Stock: `sprite_heart` / `check` / `cross` / `battery` / `arrow_r` / `smile`.
 
+Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration uses explicit `sleep_cpu_hz()` (12 MHz assumption). No USER button on this PCB — timer wake only. App must supply `@[isr("SysTick_Handler")]`.
+
 ## Usage
 
 ```klin
@@ -65,13 +69,13 @@ fn main() {
 
 ```sh
 klin get github/klin-lang/machine_rp@v0.6.0
-klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.4.0
+klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.5.0
 ```
 
 ## Examples (Arm Cortex-M33)
 
 ```sh
-cd examples/lcd_sprites    # or uart_console / lcd_text / temp_chip / …
+cd examples/sleep_demo    # or lcd_sprites / uart_console / lcd_text / …
 make deps KLIN=/path/to/klin/bin/klin.dart
 make emit KLIN=/path/to/klin/bin/klin.dart
 make elf                # needs arm-none-eabi-gcc (+ newlib nano via --specs=nano.specs)
@@ -90,6 +94,7 @@ your usual Pico 2 / RP2350 flow.
 | `battery_mv` | `BAT` + `B=xxxxMV`, green/red bar |
 | `uart_console` | LCD `UART 0.3` + `TX=`/`RX=`/`CH=`; serial banner + echo @ 115200 |
 | `lcd_sprites` | `SPRITES` + heart/check/batt/smile; magenta arrow bouncing |
+| `sleep_demo` | `SLEEP 0.5` → backlight off (`ZZZ...`) → `AWAKE` + `N=` wake count |
 
 ## License
 
