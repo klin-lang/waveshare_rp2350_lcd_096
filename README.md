@@ -6,11 +6,11 @@ in [Klin](https://github.com/klin-lang/klin).
 Not a MicroPython port. No GC, no hidden heap, no hidden clocks.
 
 Chip API: [`machine_rp`](https://github.com/klin-lang/machine_rp) `@v0.8.0` (`*_rp2350`, **Pio**).
-This package adds **pin map + ST7735S LCD + font + ADC + UART0 + sprites + light-sleep + external WS2812 (PIO) + Hazard3 RISC-V twin example** for this board only.
+This package adds **pin map + ST7735S LCD + font + ADC + UART0 + sprites + light-sleep + POWMAN + external WS2812 (PIO) + Hazard3 RISC-V twin example** for this board only.
 
 Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main/issues/095-board-waveshare-rp2350-lcd-096.md), chip targets [062](https://github.com/klin-lang/klin/blob/main/issues/062-targets-esp-rp.md).
 
-## Status (`@v0.8.0`)
+## Status (`@v0.9.0`)
 
 | Piece | Status |
 |---|---|
@@ -19,6 +19,7 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | Font 5×7 (`draw_char` / `draw_text` / `draw_text_n`) | ✅ |
 | 8×8 mono sprites (`blit_mono8` / `blit_mono8_trans` + stock icons) | ✅ |
 | Light sleep helpers (`sleep_cpu_hz` / `sleep_systick_reload`) + `sleep_demo` | ✅ |
+| **POWMAN** SWCORE power-down + LPOSC alarm wake + `powman_demo` | ✅ |
 | External WS2812 **PIO** (`ws2812_out` / `show`) + bit-bang `ws2812_bb_*` + `ws2812_strip` | ✅ |
 | Hazard3 RISC-V twin (`examples/riscv_lcd_text`) | ✅ |
 | `enable_clk_adc` + temp / battery mV helpers | ✅ |
@@ -26,9 +27,9 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | Backlight GPIO | ✅ |
 | Onboard WS2812 | — none on this PCB |
 | PIO·DMA LCD | later |
-| POWMAN deep sleep / dormant | later |
+| XOSC dormant (clocks stop, no SWCORE PD) | later |
 
-`version()` → `8`.
+`version()` → `9`.
 
 ## Pins (LCD)
 
@@ -53,7 +54,9 @@ UART0 is the Pico-compatible header mapping (Arduino `SERIAL1`). Type-C is **nat
 
 Sprites: 8 row bytes, **bit7 = leftmost** pixel. Stock: `sprite_heart` / `check` / `cross` / `battery` / `arrow_r` / `smile`.
 
-Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration uses explicit `sleep_cpu_hz()` (12 MHz assumption). No USER button on this PCB — timer wake only. App must supply `@[isr("SysTick_Handler")]`. **Arm-only** (SysTick / NVIC).
+Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration uses explicit `sleep_cpu_hz()` (12 MHz assumption). No USER button on this PCB — timer wake only. App must supply `@[isr("SysTick_Handler")]`. **Arm-only**.
+
+POWMAN (`powman_demo`): powers down **switched-core** (+ XIP + SRAM) with **LPOSC** 1 kHz timer alarm wake. Wake **reboots** the cores — wake count in `powman_scratch_*` (survives PD). API: `powman_timer_start_lposc` / `powman_alarm_in_ms` / `powman_enter_swcore_off` then WFI. **Arm-only**.
 
 WS2812: **external** strip on GP15 via **PIO0 SM0** (side-set program; `machine_rp@v0.8.0`). Buffer `0x00RRGGBB`; wire GRB. Clkdiv from explicit `ws2812_cpu_hz()` (~12 MHz). Bit-bang escape: `ws2812_bb_out`. Avoid LCD SPI during `show`.
 
@@ -76,7 +79,7 @@ fn main() {
 
 ```sh
 klin get github/klin-lang/machine_rp@v0.8.0
-klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.8.0
+klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.9.0
 ```
 
 ## Examples
@@ -84,7 +87,7 @@ klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.8.0
 ### Arm Cortex-M33
 
 ```sh
-cd examples/lcd_text    # or ws2812_strip / sleep_demo / …
+cd examples/lcd_text    # or powman_demo / ws2812_strip / sleep_demo / …
 make deps KLIN=/path/to/klin/bin/klin.dart
 make emit KLIN=/path/to/klin/bin/klin.dart
 make elf                # arm-none-eabi-gcc + --specs=nano.specs
@@ -112,7 +115,8 @@ Boot the core that matches the IMAGE_DEF (Arm vs RISC-V).
 | `battery_mv` | `BAT` + `B=xxxxMV`, green/red bar |
 | `uart_console` | LCD `UART 0.3` + `TX=`/`RX=`/`CH=`; serial banner + echo @ 115200 |
 | `lcd_sprites` | `SPRITES` + heart/check/batt/smile; magenta arrow bouncing |
-| `sleep_demo` | `SLEEP 0.5` → backlight off → `AWAKE` + `N=` (Arm) |
+| `sleep_demo` | `SLEEP 0.5` → backlight off → `AWAKE` + `N=` (Arm light sleep) |
+| `powman_demo` | `POWMAN 0.9` → off → reboot wake → `AWAKE` + `N=` (Arm POWMAN) |
 | `ws2812_strip` | LCD `WS2812` / `GP15` / `I=`; 8-LED chase via PIO on external strip |
 
 ## License

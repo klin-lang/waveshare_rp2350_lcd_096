@@ -1,0 +1,96 @@
+/// POWMAN deep sleep: backlight off → alarm wake → reboot → wake counter on LCD.
+/// Count lives in POWMAN scratch0 (survives SWCORE power-down). Arm-only.
+import "../../waveshare_rp2350_lcd_096" board
+
+@[cimport, codename("powman_demo_wfi")]
+fn powman_demo_wfi()
+
+/// Vector slot required by startup.s (unused — POWMAN wake reboots).
+@[isr("SysTick_Handler")]
+fn systick_unused() {
+}
+
+fn paint(lcd: board.Lcd, label: []i32, n: i32, wakes: i32) {
+    lcd.fill(board.color_black())
+    lcd.draw_text_n(8, 8, label, n, board.color_white(), board.color_black())
+    let mut line: [16]i32
+    let mut digs: [12]i32
+    line[0] = 'N'
+    line[1] = '='
+    let nd = board.format_u32(digs[:], wakes)
+    let mut i: i32 = 0
+    while i < nd {
+        line[2 + i] = digs[i]
+        i = i + 1
+    }
+    lcd.draw_text_n(8, 28, line[:], 2 + nd, board.color_green(), board.color_black())
+}
+
+@[link("startup.s")]
+@[link("powman_wfi.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+
+    let mut wakes = board.powman_scratch_read(0)
+    if board.powman_woke_from_swcore_pd() == 0 {
+        wakes = 0
+        board.powman_scratch_write(0, 0)
+    }
+
+    let mut title: [10]i32
+    title[0] = 'P'
+    title[1] = 'O'
+    title[2] = 'W'
+    title[3] = 'M'
+    title[4] = 'A'
+    title[5] = 'N'
+    title[6] = ' '
+    title[7] = '0'
+    title[8] = '.'
+    title[9] = '9'
+    let mut awake: [8]i32
+    awake[0] = 'A'
+    awake[1] = 'W'
+    awake[2] = 'A'
+    awake[3] = 'K'
+    awake[4] = 'E'
+    let mut sleeping: [8]i32
+    sleeping[0] = 'Z'
+    sleeping[1] = 'Z'
+    sleeping[2] = 'Z'
+    sleeping[3] = '.'
+    sleeping[4] = '.'
+    sleeping[5] = '.'
+
+    if wakes == 0 {
+        paint(lcd, title[:], 10, wakes)
+    } else {
+        paint(lcd, awake[:], 5, wakes)
+    }
+    board.delay_ms(1500)
+
+    lcd.fill_rect(8, 8, 144, 16, board.color_black())
+    lcd.draw_text_n(8, 8, sleeping[:], 6, board.color_yellow(), board.color_black())
+    lcd.backlight(false)
+
+    board.powman_scratch_write(0, wakes + 1)
+    board.powman_timer_start_lposc()
+    board.powman_alarm_in_ms(2000)
+    if board.powman_enter_swcore_off() != 0 {
+        while true {
+            powman_demo_wfi()
+        }
+    }
+
+    // Request ignored / invalid — show error path with light sleep fallback feel
+    lcd.backlight(true)
+    let mut err: [8]i32
+    err[0] = 'E'
+    err[1] = 'R'
+    err[2] = 'R'
+    paint(lcd, err[:], 3, wakes)
+    while true {
+    }
+}

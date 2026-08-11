@@ -5,7 +5,7 @@ import testing
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
 fn test_version() {
-    testing.assert_eq_i32(version(), 8)
+    testing.assert_eq_i32(version(), 9)
 }
 
 fn test_pin_map() {
@@ -87,4 +87,9 @@ fn test_ws2812() {
     testing.assert_eq_i32(ws2812_pio_bit_hz(), 8000000)
     testing.assert_eq_i32(ws2812_rgb(1, 2, 3), 0x00010203)
     testing.assert(ws2812_t1h() > ws2812_t0h())
+}
+
+fn test_powman_consts() {
+    testing.assert_eq_i32(powman_password(), 0x5afe0000)
+    testing.assert_eq_i32(powman_base(), 0x40100000)
 }
