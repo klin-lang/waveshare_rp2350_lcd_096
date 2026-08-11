@@ -1,0 +1,55 @@
+/// Built-in 8×8 mono sprites (row bytes; bit7 = leftmost). No heap.
+module waveshare_rp2350_lcd_096
+
+pub fn sprite_size(): i32 {
+    return 8
+}
+
+/// Copy 8 row bytes into `out`. No-op if `out.len < 8`.
+fn write8(
+    out: []i32,
+    a: i32,
+    b: i32,
+    c: i32,
+    d: i32,
+    e: i32,
+    f: i32,
+    g: i32,
+    h: i32
+) {
+    if out.len < 8 {
+        return
+    }
+    out[0] = a
+    out[1] = b
+    out[2] = c
+    out[3] = d
+    out[4] = e
+    out[5] = f
+    out[6] = g
+    out[7] = h
+}
+
+pub fn sprite_heart(out: []i32) {
+    write8(out, 0x66, 0xFF, 0xFF, 0xFF, 0x7E, 0x3C, 0x18, 0x00)
+}
+
+pub fn sprite_check(out: []i32) {
+    write8(out, 0x00, 0x01, 0x02, 0x84, 0x48, 0x30, 0x00, 0x00)
+}
+
+pub fn sprite_cross(out: []i32) {
+    write8(out, 0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81)
+}
+
+pub fn sprite_battery(out: []i32) {
+    write8(out, 0x3C, 0x24, 0xE7, 0xE7, 0xE7, 0xE7, 0x3C, 0x18)
+}
+
+pub fn sprite_arrow_r(out: []i32) {
+    write8(out, 0x08, 0x0C, 0x0E, 0xFF, 0xFF, 0x0E, 0x0C, 0x08)
+}
+
+pub fn sprite_smile(out: []i32) {
+    write8(out, 0x3C, 0x42, 0xA5, 0x81, 0xA5, 0x99, 0x42, 0x3C)
+}

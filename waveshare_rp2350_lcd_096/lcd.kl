@@ -314,6 +314,71 @@ pub fn (lcd: Lcd) draw_text_n(
     }
 }
 
+/// Blit an 8×8 1-bit sprite. `rows` = 8 row bytes; **bit7 = leftmost** pixel.
+/// Opaque: every pixel is `fg` or `bg`. Streams one SPI window (no per-pixel CS).
+pub fn (lcd: Lcd) blit_mono8(x: i32, y: i32, rows: []i32, fg: i32, bg: i32) {
+    if rows.len < 8 {
+        return
+    }
+    if x < 0 {
+        return
+    }
+    if y < 0 {
+        return
+    }
+    if x + 8 > lcd.width {
+        return
+    }
+    if y + 8 > lcd.height {
+        return
+    }
+    lcd.set_window(x, y, x + 7, y + 7)
+    lcd.dc.high()
+    lcd.cs.low()
+    let lo_fg = fg & 255
+    let hi_fg = (fg >> 8) & 255
+    let lo_bg = bg & 255
+    let hi_bg = (bg >> 8) & 255
+    let mut row: i32 = 0
+    while row < 8 {
+        let bits = rows[row]
+        let mut col: i32 = 0
+        while col < 8 {
+            let on = (bits >> (7 - col)) & 1
+            if on != 0 {
+                spi_put(lcd, lo_fg)
+                spi_put(lcd, hi_fg)
+            } else {
+                spi_put(lcd, lo_bg)
+                spi_put(lcd, hi_bg)
+            }
+            col = col + 1
+        }
+        row = row + 1
+    }
+    lcd.cs.high()
+}
+
+/// Like `blit_mono8`, but only set bits are drawn (`bg` is transparent).
+pub fn (lcd: Lcd) blit_mono8_trans(x: i32, y: i32, rows: []i32, fg: i32) {
+    if rows.len < 8 {
+        return
+    }
+    let mut row: i32 = 0
+    while row < 8 {
+        let bits = rows[row]
+        let mut col: i32 = 0
+        while col < 8 {
+            let on = (bits >> (7 - col)) & 1
+            if on != 0 {
+                lcd.pixel(x + col, y + row, fg)
+            }
+            col = col + 1
+        }
+        row = row + 1
+    }
+}
+
 pub fn (lcd: Lcd) deinit() {
     lcd.backlight(false)
     lcd.spi.deinit()
