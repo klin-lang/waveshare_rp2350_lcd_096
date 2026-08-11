@@ -1,0 +1,30 @@
+/// Board helpers for USB CDC ACM (Type-C). Thin wrap over `machine_rp` UsbCdc.
+module waveshare_rp2350_lcd_096
+
+import "github/klin-lang/machine_rp" machine
+
+/// Open USB CDC after `enable_usb_clocks()`.
+pub fn usb_cdc_out(): machine.UsbCdc {
+    return machine.usb_cdc_out_rp2350()
+}
+
+pub fn usb_write_codes(u: machine.UsbCdc, codes: []i32) {
+    usb_write_codes_n(u, codes, codes.len)
+}
+
+pub fn usb_write_codes_n(u: machine.UsbCdc, codes: []i32, n: i32) {
+    let mut lim = n
+    if lim > codes.len {
+        lim = codes.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    while i < lim {
+        while !u.write_u8(codes[i]) {
+            u.poll()
+        }
+        i = i + 1
+    }
+}

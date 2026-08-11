@@ -5,18 +5,19 @@ in [Klin](https://github.com/klin-lang/klin).
 
 Not a MicroPython port. No GC, no hidden heap, no hidden clocks.
 
-Chip API: [`machine_rp`](https://github.com/klin-lang/machine_rp) `@v0.9.0` (`*_rp2350`, **Pio** + **Dma**).
-This package adds **pin map + ST7735S LCD (DMA→SPI1 bulk) + font + ADC + UART0 + sprites + light-sleep + POWMAN + external WS2812 (PIO) + Hazard3 RISC-V twin example** for this board only.
+Chip API: [`machine_rp`](https://github.com/klin-lang/machine_rp) `@v0.10.0` (`*_rp2350`, **Pio** + **Dma** + **UsbCdc**).
+This package adds **pin map + ST7735S LCD (DMA→SPI1 bulk) + USB CDC + font + ADC + UART0 + sprites + light-sleep + POWMAN + external WS2812 (PIO) + Hazard3 RISC-V twin example** for this board only.
 
 Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main/issues/095-board-waveshare-rp2350-lcd-096.md), chip targets [062](https://github.com/klin-lang/klin/blob/main/issues/062-targets-esp-rp.md).
 
-## Status (`@v0.10.0`)
+## Status (`@v0.11.0`)
 
 | Piece | Status |
 |---|---|
 | Pin map (LCD / VBUS / battery ADC / UART0 / WS2812 DIN) | ✅ |
 | ST7735S 160×80 (`lcd_out`, `fill`, `fill_rect`, lines) | ✅ |
 | **DMA→SPI1** bulk pixels (`fill_rect` / `blit_mono8`; ch `lcd_dma_ch()`) | ✅ |
+| **USB CDC ACM** Type-C console (`usb_cdc_out` / `usb_console`) | ✅ |
 | Font 5×7 (`draw_char` / `draw_text` / `draw_text_n`) | ✅ |
 | 8×8 mono sprites (`blit_mono8` / `blit_mono8_trans` + stock icons) | ✅ |
 | Light sleep helpers (`sleep_cpu_hz` / `sleep_systick_reload`) + `sleep_demo` | ✅ |
@@ -30,7 +31,7 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | PIO-as-SPI LCD (pin remux off SPI1) | later |
 | XOSC dormant (clocks stop, no SWCORE PD) | later |
 
-`version()` → `10`.
+`version()` → `11`.
 
 ## Pins (LCD)
 
@@ -66,6 +67,8 @@ WS2812: **external** strip on GP15 via **PIO0 SM0** (side-set program; `machine_
 
 RISC-V twin (`riscv_lcd_text`): same Klin LCD module, Hazard3 crt0 + IMAGE_DEF `0x1101`. Needs `riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32` and `mem.S` (`memcpy`/`memset`; no `nano.specs` on Ubuntu’s RISC-V package).
 
+USB CDC (`usb_console`): Type-C virtual COM. Call `enable_usb_clocks()` (XOSC→PLL_USB→clk_usb 48 MHz) then `usb_cdc_out()`; poll `u.poll()` in the main loop. Host: `/dev/ttyACM*`. `uart_console` (header USB–UART) unchanged.
+
 ## Usage
 
 ```klin
@@ -83,8 +86,8 @@ fn main() {
 ```
 
 ```sh
-klin get github/klin-lang/machine_rp@v0.9.0
-klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.10.0
+klin get github/klin-lang/machine_rp@v0.10.0
+klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.11.0
 ```
 
 ## Examples
@@ -119,6 +122,7 @@ Boot the core that matches the IMAGE_DEF (Arm vs RISC-V).
 | `riscv_lcd_text` | green `KLIN RV32`, cyan `HAZARD3` (RISC-V) |
 | `temp_chip` | `TEMP` + `T=xxC` updating, yellow bar |
 | `battery_mv` | `BAT` + `B=xxxxMV`, green/red bar |
+| `usb_console` | LCD `USB 0.11` + Type-C CDC echo |
 | `uart_console` | LCD `UART 0.3` + `TX=`/`RX=`/`CH=`; serial banner + echo @ 115200 |
 | `lcd_sprites` | `SPRITES` + heart/check/batt/smile; magenta arrow bouncing |
 | `sleep_demo` | `SLEEP 0.5` → backlight off → `AWAKE` + `N=` (Arm light sleep) |

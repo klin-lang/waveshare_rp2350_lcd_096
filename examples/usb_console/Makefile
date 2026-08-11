@@ -15,19 +15,19 @@ deps:
 	  *) "$(KLIN)" get github/klin-lang/machine_rp@v0.10.0 ;; \
 	esac
 
-emit: out/sleep_demo.c
+emit: out/usb_console.c
 
-out/sleep_demo.c out/sleep_demo.link: sleep_demo.kl $(wildcard $(ROOT)/waveshare_rp2350_lcd_096/*.kl)
+out/usb_console.c out/usb_console.link: usb_console.kl $(wildcard $(ROOT)/waveshare_rp2350_lcd_096/*.kl)
 	@mkdir -p out
 	@case "$(KLIN)" in \
-	  *.dart) dart run "$(KLIN)" --emit-c sleep_demo.kl ;; \
-	  *) "$(KLIN)" --emit-c sleep_demo.kl ;; \
+	  *.dart) dart run "$(KLIN)" --emit-c usb_console.kl ;; \
+	  *) "$(KLIN)" --emit-c usb_console.kl ;; \
 	esac
 
-elf: sleep_demo.elf
+elf: usb_console.elf
 
-sleep_demo.elf: linker.ld out/sleep_demo.c out/sleep_demo.link
-	$(CC) $(CFLAGS) -I. $(LDFLAGS) $$(cat out/sleep_demo.link) out/sleep_demo.c -o $@
+usb_console.elf: linker.ld out/usb_console.c out/usb_console.link
+	$(CC) $(CFLAGS) -I. $(LDFLAGS) $$(cat out/usb_console.link) out/usb_console.c -o $@
 
 clean:
-	rm -rf out sleep_demo.elf
+	rm -rf out usb_console.elf

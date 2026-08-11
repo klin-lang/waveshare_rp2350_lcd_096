@@ -11,8 +11,8 @@ all: emit
 
 deps:
 	@case "$(KLIN)" in \
-	  *.dart) dart run "$(KLIN)" get github/klin-lang/machine_rp@v0.9.0 ;; \
-	  *) "$(KLIN)" get github/klin-lang/machine_rp@v0.9.0 ;; \
+	  *.dart) dart run "$(KLIN)" get github/klin-lang/machine_rp@v0.10.0 ;; \
+	  *) "$(KLIN)" get github/klin-lang/machine_rp@v0.10.0 ;; \
 	esac
 
 emit: out/temp_chip.c
