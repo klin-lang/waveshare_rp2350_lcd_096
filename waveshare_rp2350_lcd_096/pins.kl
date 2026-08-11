@@ -109,3 +109,8 @@ pub fn uart0_rx(): i32 {
 pub fn uart_default_baud(): i32 {
     return 115200
 }
+
+/// Default DIN for an **external** WS2812 strip (header GP15). No onboard NeoPixel.
+pub fn ws2812_data(): i32 {
+    return 15
+}

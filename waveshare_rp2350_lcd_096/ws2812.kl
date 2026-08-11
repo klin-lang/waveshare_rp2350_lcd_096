@@ -1,0 +1,123 @@
+/// Bit-bang WS2812 / NeoPixel on a GPIO (external strip). No PIO, no heap.
+/// Timing loops assume ~`ws2812_cpu_hz()`; tune `ws2812_t*` on hardware if needed.
+/// Buffer format: `pixels[i] = 0x00RRGGBB` (wire order is GRB).
+module waveshare_rp2350_lcd_096
+
+import "github/klin-lang/machine_rp" machine
+
+pub struct Ws2812 {
+    pin: machine.Pin
+}
+
+/// Same clock assumption as light-sleep helpers (explicit, not from clock tree).
+pub fn ws2812_cpu_hz(): i32 {
+    return sleep_cpu_hz()
+}
+
+/// Tunable busy-loop counts for one bit (at ~12 MHz). Increase if bits are short.
+pub fn ws2812_t0h(): i32 {
+    return 1
+}
+
+pub fn ws2812_t1h(): i32 {
+    return 5
+}
+
+pub fn ws2812_t0l(): i32 {
+    return 5
+}
+
+pub fn ws2812_t1l(): i32 {
+    return 1
+}
+
+/// Pack 8-bit R,G,B into `0x00RRGGBB`.
+pub fn ws2812_rgb(r: i32, g: i32, b: i32): i32 {
+    return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)
+}
+
+pub fn ws2812_out(gpio: i32): Ws2812 {
+    let p = machine.pin_out_rp2350(gpio)
+    p.low()
+    return Ws2812{ pin: p }
+}
+
+/// Open strip on `ws2812_data()` (GP15).
+pub fn ws2812_out_default(): Ws2812 {
+    return ws2812_out(ws2812_data())
+}
+
+fn spin(n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        i = i + 1
+    }
+}
+
+fn send_bit(w: Ws2812, one: i32) {
+    // Direct SIO set/clr — avoid method-call overhead in the bit window.
+    *(w.pin.out_set) = w.pin.mask
+    if one != 0 {
+        spin(ws2812_t1h())
+    } else {
+        spin(ws2812_t0h())
+    }
+    *(w.pin.out_clr) = w.pin.mask
+    if one != 0 {
+        spin(ws2812_t1l())
+    } else {
+        spin(ws2812_t0l())
+    }
+}
+
+fn send_byte(w: Ws2812, b: i32) {
+    let mut bit: i32 = 7
+    while bit >= 0 {
+        send_bit(w, (b >> bit) & 1)
+        bit = bit - 1
+    }
+}
+
+/// Write GRB for one `0x00RRGGBB` pixel.
+fn send_pixel(w: Ws2812, rgb: i32) {
+    let r = (rgb >> 16) & 255
+    let g = (rgb >> 8) & 255
+    let b = rgb & 255
+    send_byte(w, g)
+    send_byte(w, r)
+    send_byte(w, b)
+}
+
+/// Shift out the first `n` pixels (clamped to `pixels.len`), then ≥50 µs reset low.
+pub fn (w: Ws2812) show(pixels: []i32, n: i32) {
+    let mut lim = n
+    if lim > pixels.len {
+        lim = pixels.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    while i < lim {
+        send_pixel(w, pixels[i])
+        i = i + 1
+    }
+    // Reset latch — busy_wait scale from delay_ms (~8000 iters/ms) → ~100 iters ≈ 50µs+
+    busy_wait(200)
+}
+
+/// Fill `pixels[0..n)` with the same RGB color (does not show).
+pub fn ws2812_fill(pixels: []i32, n: i32, rgb: i32) {
+    let mut lim = n
+    if lim > pixels.len {
+        lim = pixels.len
+    }
+    if lim < 0 {
+        lim = 0
+    }
+    let mut i: i32 = 0
+    while i < lim {
+        pixels[i] = rgb
+        i = i + 1
+    }
+}
