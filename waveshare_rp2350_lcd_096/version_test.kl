@@ -5,7 +5,7 @@ import testing
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
 fn test_version() {
-    testing.assert_eq_i32(version(), 3)
+    testing.assert_eq_i32(version(), 4)
 }
 
 fn test_pin_map() {
@@ -57,4 +57,16 @@ fn test_format_u32() {
     testing.assert_eq_i32(buf[0], '1')
     testing.assert_eq_i32(buf[1], '2')
     testing.assert_eq_i32(buf[2], '3')
+}
+
+fn test_sprites8() {
+    testing.assert_eq_i32(sprite_size(), 8)
+    let mut rows: [8]i32
+    sprite_heart(rows[:])
+    testing.assert_eq_i32(rows[0], 0x66)
+    testing.assert(rows[1] != 0)
+    sprite_check(rows[:])
+    testing.assert(rows[3] != 0)
+    sprite_arrow_r(rows[:])
+    testing.assert_eq_i32(rows[3], 0xFF)
 }
