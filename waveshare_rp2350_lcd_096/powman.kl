@@ -104,6 +104,8 @@ pub fn powman_timer_ms(): i32 {
 }
 
 /// Arm alarm at `now + ms` and enable power-up on alarm. Clamps `ms` to 1..=60000.
+/// Also arms AON wake for oscillator dormant (SDK `powman_enable_alarm_wakeup_at_ms`)
+/// when used **without** `powman_enter_swcore_off`.
 pub fn powman_alarm_in_ms(ms: i32) {
     let mut m = ms
     if m < 1 {
@@ -126,6 +128,12 @@ pub fn powman_alarm_in_ms(ms: i32) {
     powman_set_bits(0x88, (1 << 4) | (1 << 5))
     // INTE.TIMER
     powman_set_bits(0xe4, 1 << 1)
+}
+
+/// Clear ALARM sticky + disable ALARM_ENAB / PWRUP_ON_ALARM / INTE.TIMER.
+pub fn powman_alarm_disarm() {
+    powman_clr_bits(0xe4, 1 << 1)
+    powman_clr_bits(0x88, (1 << 4) | (1 << 5) | (1 << 6))
 }
 
 /// Request power-down of SWCORE + XIP + SRAM0/1. Returns 1 when WAITING (caller must WFI).

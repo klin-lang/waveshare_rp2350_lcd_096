@@ -1,0 +1,239 @@
+/// Oscillator dormant (stop XOSC/ROSC without POWMAN SWCORE PD).
+/// RAM and PC survive; execution resumes after wake + STABLE.
+/// Timer wake on this PCB: LPOSC + POWMAN alarm + `rosc_enter_dormant`
+/// (SDK `DORMANT_CLOCK_SOURCE_LPOSC` path). Explicit clocks — no hidden mux.
+module waveshare_rp2350_lcd_096
+
+pub fn xosc_base(): i32 {
+    return 0x40048000
+}
+
+pub fn rosc_base(): i32 {
+    return 0x400e8000
+}
+
+pub fn clocks_base(): i32 {
+    return 0x40010000
+}
+
+/// Write to XOSC/ROSC `DORMANT` to pause until IRQ / AON wake.
+pub fn dormant_magic(): i32 {
+    return 0x636f6d61
+}
+
+/// Invalid / wake value for `DORMANT` (hardware default).
+pub fn wake_magic(): i32 {
+    return 0x77616b65
+}
+
+/// CLK_REF SRC: ROSC phase.
+pub fn clocks_src_rosc_ph(): i32 {
+    return 0
+}
+
+/// CLK_REF SRC: XOSC.
+pub fn clocks_src_xosc(): i32 {
+    return 2
+}
+
+/// CLK_REF SRC: LPOSC (~32 kHz).
+pub fn clocks_src_lposc(): i32 {
+    return 3
+}
+
+/// CLK_SYS SRC: glitchless from clk_ref.
+pub fn clocks_sys_src_ref(): i32 {
+    return 0
+}
+
+/// CLK_SYS SRC: auxiliary mux.
+pub fn clocks_sys_src_aux(): i32 {
+    return 1
+}
+
+/// CLK_SYS AUXSRC: ROSC (non-phase).
+pub fn clocks_sys_aux_rosc(): i32 {
+    return 2
+}
+
+fn clocks_wait_ref_selected(src: i32) {
+    let sel = cast(*mut volatile i32, clocks_base() + 0x38)
+    let bit = 1 << (src & 3)
+    let mut spins: i32 = 0
+    while (*sel & bit) == 0 {
+        spins = spins + 1
+        if spins > 1000000 {
+            break
+        }
+    }
+}
+
+fn clocks_wait_sys_selected(src: i32) {
+    let sel = cast(*mut volatile i32, clocks_base() + 0x44)
+    let bit = 1 << (src & 1)
+    let mut spins: i32 = 0
+    while (*sel & bit) == 0 {
+        spins = spins + 1
+        if spins > 1000000 {
+            break
+        }
+    }
+}
+
+/// Mux `clk_ref` to `src` (`clocks_src_*`) and wait SELECTED.
+pub fn clocks_clk_ref_src(src: i32) {
+    let ctrl = cast(*mut volatile i32, clocks_base() + 0x30)
+    let cur = *ctrl
+    // clear SRC [1:0]
+    *ctrl = (cur & (0 - 1 - 3)) | (src & 3)
+    clocks_wait_ref_selected(src)
+}
+
+/// Mux `clk_sys` from clk_ref (no PLL).
+pub fn clocks_clk_sys_from_ref() {
+    let ctrl = cast(*mut volatile i32, clocks_base() + 0x3c)
+    let cur = *ctrl
+    *ctrl = cur & (0 - 1 - 1)
+    clocks_wait_sys_selected(0)
+}
+
+/// Mux `clk_sys` from AUX with `auxsrc` (e.g. `clocks_sys_aux_rosc()`).
+pub fn clocks_clk_sys_aux(auxsrc: i32) {
+    let ctrl = cast(*mut volatile i32, clocks_base() + 0x3c)
+    // AUXSRC [7:5], SRC=1
+    *ctrl = ((auxsrc & 7) << 5) | 1
+    clocks_wait_sys_selected(1)
+}
+
+/// Point `clk_peri` at `clk_sys` and enable (for SPI after wake).
+pub fn clocks_clk_peri_from_sys() {
+    let ctrl = cast(*mut volatile i32, clocks_base() + 0x48)
+    // AUXSRC = clk_sys (0), ENABLE
+    *ctrl = 1 << 11
+}
+
+/// Clear `clk_usb` ENABLE (safe if never started).
+pub fn clocks_stop_clk_usb() {
+    let ctrl = cast(*mut volatile i32, clocks_base() + 0x60)
+    *ctrl = 0
+}
+
+/// Clear `clk_adc` ENABLE (safe if never started).
+pub fn clocks_stop_clk_adc() {
+    let ctrl = cast(*mut volatile i32, clocks_base() + 0x6c)
+    *ctrl = 0
+}
+
+/// Power-down PLL_USB (all PD bits). Call after `clocks_stop_clk_usb`.
+pub fn pll_usb_power_down() {
+    let pwr = cast(*mut volatile i32, 0x40058004)
+    // PD | DSMPD | POSTDIVPD | VCOPD
+    *pwr = 0x2d
+}
+
+/// Disable XOSC and wait until not STABLE. Do not call while clk_sys uses XOSC.
+pub fn xosc_disable() {
+    let ctrl = cast(*mut volatile i32, xosc_base())
+    let status = cast(*mut volatile i32, xosc_base() + 0x04)
+    // DISABLE=0xd1e<<12 | FREQ_RANGE 1_15MHZ
+    *ctrl = (0xd1e << 12) | 0xaa0
+    let mut spins: i32 = 0
+    while (*status & (1 << 31)) != 0 {
+        spins = spins + 1
+        if spins > 1000000 {
+            break
+        }
+    }
+}
+
+/// Write XOSC.DORMANT and wait STABLE after wake.
+/// Caller must: run from XOSC, stop PLLs, arm dormant-wake IRQ.
+pub fn xosc_enter_dormant() {
+    let dormant = cast(*mut volatile i32, xosc_base() + 0x08)
+    let status = cast(*mut volatile i32, xosc_base() + 0x04)
+    *dormant = dormant_magic()
+    while (*status & (1 << 31)) == 0 {
+    }
+}
+
+/// Write ROSC.DORMANT and wait STABLE after wake.
+/// Caller must: run clk_sys from ROSC (AUX), clk_ref from LPOSC for timer wake,
+/// arm POWMAN alarm (`powman_alarm_in_ms`), stop PLLs / USB / ADC clocks.
+pub fn rosc_enter_dormant() {
+    let dormant = cast(*mut volatile i32, rosc_base() + 0x10)
+    let status = cast(*mut volatile i32, rosc_base() + 0x1c)
+    *dormant = dormant_magic()
+    while (*status & (1 << 31)) == 0 {
+    }
+}
+
+/// Prep clocks for POWMAN-timer dormant (SDK LPOSC path). Explicit steps:
+/// stop USB/ADC → PD PLL_USB → clk_ref=LPOSC → clk_sys=ROSC AUX → peri=sys.
+/// Does not start POWMAN timer or enter dormant.
+pub fn dormant_clocks_prep_lposc_timer() {
+    clocks_stop_clk_usb()
+    clocks_stop_clk_adc()
+    pll_usb_power_down()
+    clocks_clk_ref_src(clocks_src_lposc())
+    clocks_clk_sys_aux(clocks_sys_aux_rosc())
+    clocks_clk_peri_from_sys()
+}
+
+/// After ROSC dormant wake: clk_ref=ROSC_PH, clk_sys=clk_ref, peri=sys.
+pub fn dormant_clocks_restore_rosc() {
+    clocks_clk_ref_src(clocks_src_rosc_ph())
+    clocks_clk_sys_from_ref()
+    clocks_clk_peri_from_sys()
+}
+
+/// Prep clocks for GPIO + XOSC dormant: stop USB/ADC → PD PLL →
+/// enable XOSC → clk_ref=XOSC → clk_sys=ref → peri=sys.
+/// Caller still arms `dormant_wake_gpio_enable` before `xosc_enter_dormant`.
+pub fn dormant_clocks_prep_xosc() {
+    clocks_stop_clk_usb()
+    clocks_stop_clk_adc()
+    pll_usb_power_down()
+    enable_xosc()
+    clocks_clk_ref_src(clocks_src_xosc())
+    clocks_clk_sys_from_ref()
+    clocks_clk_peri_from_sys()
+}
+
+/// Enable GPIO in IO_BANK0 dormant-wake INTE (edge/level pack in `event_bits`).
+/// `event_bits` low 4: LEVEL_LOW, LEVEL_HIGH, EDGE_LOW, EDGE_HIGH.
+pub fn dormant_wake_gpio_enable(gpio: i32, event_bits: i32) {
+    let mut g = gpio
+    if g < 0 {
+        g = 0
+    }
+    if g > 47 {
+        g = 47
+    }
+    // Pad input enable — clear ISO (bit8), set IE (bit6)
+    let pad = cast(*mut volatile i32, 0x40038000 + 0x04 + g * 4)
+    *pad = (*pad & (0 - 1 - (1 << 8))) | (1 << 6)
+    let reg = g / 8
+    let shift = (g % 8) * 4
+    let inte = cast(*mut volatile i32, 0x40028000 + 0x2d8 + reg * 4)
+    let mask = 15 << shift
+    *inte = (*inte & (0 - 1 - mask)) | ((event_bits & 15) << shift)
+}
+
+/// Clear INTR and disable dormant-wake for `gpio`.
+pub fn dormant_wake_gpio_ack(gpio: i32, event_bits: i32) {
+    let mut g = gpio
+    if g < 0 {
+        g = 0
+    }
+    if g > 47 {
+        g = 47
+    }
+    let reg = g / 8
+    let shift = (g % 8) * 4
+    let mask = (event_bits & 15) << shift
+    // INTR0 @ 0x230
+    let intr = cast(*mut volatile i32, 0x40028000 + 0x230 + reg * 4)
+    *intr = mask
+    let inte = cast(*mut volatile i32, 0x40028000 + 0x2d8 + reg * 4)
+    *inte = *inte & (0 - 1 - (15 << shift))
+}
