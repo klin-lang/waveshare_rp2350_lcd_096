@@ -6,11 +6,11 @@ in [Klin](https://github.com/klin-lang/klin).
 Not a MicroPython port. No GC, no hidden heap, no hidden clocks.
 
 Chip API: [`machine_rp`](https://github.com/klin-lang/machine_rp) `@v0.11.0` (`*_rp2350`, **Pio** + **Dma** + **UsbCdc**).
-This package adds **pin map + ST7735S LCD (DMA→SPI1 **or** PIO-as-SPI) + USB CDC + font + ADC + UART0 + sprites + light-sleep + POWMAN + external WS2812 (PIO) + Hazard3 RISC-V twin example** for this board only.
+This package adds **pin map + ST7735S LCD (DMA→SPI1 **or** PIO-as-SPI) + USB CDC + font + ADC + UART0 + sprites + light-sleep + oscillator dormant + POWMAN + external WS2812 (PIO) + Hazard3 RISC-V twin example** for this board only.
 
 Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main/issues/095-board-waveshare-rp2350-lcd-096.md), chip targets [062](https://github.com/klin-lang/klin/blob/main/issues/062-targets-esp-rp.md).
 
-## Status (`@v0.12.0`)
+## Status (`@v0.13.0`)
 
 | Piece | Status |
 |---|---|
@@ -22,6 +22,7 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | Font 5×7 (`draw_char` / `draw_text` / `draw_text_n`) | ✅ |
 | 8×8 mono sprites (`blit_mono8` / `blit_mono8_trans` + stock icons) | ✅ |
 | Light sleep helpers (`sleep_cpu_hz` / `sleep_systick_reload`) + `sleep_demo` | ✅ |
+| **Oscillator dormant** (no SWCORE PD; LPOSC timer / GPIO) + `xosc_dormant_demo` | ✅ |
 | **POWMAN** SWCORE power-down + LPOSC alarm wake + `powman_demo` | ✅ |
 | External WS2812 **PIO** (`ws2812_out` / `show`) + bit-bang `ws2812_bb_*` + `ws2812_strip` | ✅ |
 | Hazard3 RISC-V twin (`examples/riscv_lcd_text`) | ✅ |
@@ -29,9 +30,8 @@ Decision / catalog: [Klin issue 095](https://github.com/klin-lang/klin/blob/main
 | UART0 helpers (`uart0_out`, `uart_write_codes`) | ✅ |
 | Backlight GPIO | ✅ |
 | Onboard WS2812 | — none on this PCB |
-| XOSC dormant (clocks stop, no SWCORE PD) | later |
 
-`version()` → `12`.
+`version()` → `13`.
 
 ## Pins (LCD)
 
@@ -64,6 +64,8 @@ Sprites: 8 row bytes, **bit7 = leftmost** pixel. Stock: `sprite_heart` / `check`
 
 Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration uses explicit `sleep_cpu_hz()` (12 MHz assumption). No USER button on this PCB — timer wake only. App must supply `@[isr("SysTick_Handler")]`. **Arm-only**.
 
+Oscillator dormant (`xosc_dormant_demo`): stops **ROSC** (timer path) or **XOSC** (GPIO path) without POWMAN SWCORE PD — RAM/PC survive. Stock demo: `dormant_clocks_prep_lposc_timer` → `powman_alarm_in_ms` → `rosc_enter_dormant` → `powman_alarm_disarm` → `dormant_clocks_restore_rosc`. Optional GPIO: `dormant_clocks_prep_xosc` + `dormant_wake_gpio_enable` + `xosc_enter_dormant`. **Arm-only**.
+
 POWMAN (`powman_demo`): powers down **switched-core** (+ XIP + SRAM) with **LPOSC** 1 kHz timer alarm wake. Wake **reboots** the cores — wake count in `powman_scratch_*` (survives PD). API: `powman_timer_start_lposc` / `powman_alarm_in_ms` / `powman_enter_swcore_off` then WFI. **Arm-only**.
 
 WS2812: **external** strip on GP15 via **PIO0 SM0** (side-set program; `machine_rp@v0.11.0`). Buffer `0x00RRGGBB`; wire GRB. Clkdiv from explicit `ws2812_cpu_hz()` (~12 MHz). Bit-bang escape: `ws2812_bb_out`. Avoid overlapping `show` with LCD DMA (shared DMA ch0 / bus).
@@ -90,7 +92,7 @@ fn main() {
 
 ```sh
 klin get github/klin-lang/machine_rp@v0.11.0
-klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.12.0
+klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.13.0
 ```
 
 ## Examples
@@ -130,6 +132,7 @@ Boot the core that matches the IMAGE_DEF (Arm vs RISC-V).
 | `uart_console` | LCD `UART 0.3` + `TX=`/`RX=`/`CH=`; serial banner + echo @ 115200 |
 | `lcd_sprites` | `SPRITES` + heart/check/batt/smile; magenta arrow bouncing |
 | `sleep_demo` | `SLEEP 0.5` → backlight off → `AWAKE` + `N=` (Arm light sleep) |
+| `xosc_dormant_demo` | `DORM 0.13` → ROSC dormant + LPOSC alarm → `AWAKE` + `N=` (no reboot) |
 | `powman_demo` | `POWMAN 0.9` → off → reboot wake → `AWAKE` + `N=` (Arm POWMAN) |
 | `ws2812_strip` | LCD `WS2812` / `GP15` / `I=`; 8-LED chase via PIO on external strip |
 

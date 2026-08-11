@@ -1,0 +1,79 @@
+/// Oscillator dormant (no SWCORE PD): backlight off → LPOSC alarm → ROSC wake.
+/// Wake count in RAM (survives dormant). Arm-only. Contrast: sleep_demo / powman_demo.
+import "../../waveshare_rp2350_lcd_096" board
+
+/// Vector slot required by startup.s (unused — dormant does not use SysTick).
+@[isr("SysTick_Handler")]
+fn systick_unused() {
+}
+
+fn paint(lcd: board.Lcd, label: []i32, n: i32, wakes: i32) {
+    lcd.fill(board.color_black())
+    lcd.draw_text_n(8, 8, label, n, board.color_white(), board.color_black())
+    let mut line: [16]i32
+    let mut digs: [12]i32
+    line[0] = 'N'
+    line[1] = '='
+    let nd = board.format_u32(digs[:], wakes)
+    let mut i: i32 = 0
+    while i < nd {
+        line[2 + i] = digs[i]
+        i = i + 1
+    }
+    lcd.draw_text_n(8, 28, line[:], 2 + nd, board.color_cyan(), board.color_black())
+}
+
+@[link("startup.s")]
+@[link("image_def.S")]
+fn main() {
+    let lcd = board.lcd_out(12000000, 1000000)
+    lcd.backlight(true)
+
+    let mut wakes: i32 = 0
+
+    let mut title: [10]i32
+    title[0] = 'D'
+    title[1] = 'O'
+    title[2] = 'R'
+    title[3] = 'M'
+    title[4] = ' '
+    title[5] = '0'
+    title[6] = '.'
+    title[7] = '1'
+    title[8] = '3'
+    let mut awake: [8]i32
+    awake[0] = 'A'
+    awake[1] = 'W'
+    awake[2] = 'A'
+    awake[3] = 'K'
+    awake[4] = 'E'
+    let mut sleeping: [8]i32
+    sleeping[0] = 'Z'
+    sleeping[1] = 'Z'
+    sleeping[2] = 'Z'
+    sleeping[3] = '.'
+    sleeping[4] = '.'
+    sleeping[5] = '.'
+
+    paint(lcd, title[:], 9, wakes)
+    board.delay_ms(1200)
+
+    while true {
+        lcd.fill_rect(8, 8, 144, 16, board.color_black())
+        lcd.draw_text_n(8, 8, sleeping[:], 6, board.color_yellow(), board.color_black())
+        lcd.backlight(false)
+
+        // Explicit clock prep (SDK LPOSC timer dormant path).
+        board.dormant_clocks_prep_lposc_timer()
+        board.powman_timer_start_lposc()
+        board.powman_alarm_in_ms(2000)
+        board.rosc_enter_dormant()
+        board.powman_alarm_disarm()
+        board.dormant_clocks_restore_rosc()
+
+        wakes = wakes + 1
+        lcd.backlight(true)
+        paint(lcd, awake[:], 5, wakes)
+        board.delay_ms(1200)
+    }
+}
