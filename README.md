@@ -58,7 +58,7 @@ Light sleep (`sleep_demo`): Cortex-M **SysTick + WFI** (not POWMAN). Duration us
 
 POWMAN (`powman_demo`): powers down **switched-core** (+ XIP + SRAM) with **LPOSC** 1 kHz timer alarm wake. Wake **reboots** the cores — wake count in `powman_scratch_*` (survives PD). API: `powman_timer_start_lposc` / `powman_alarm_in_ms` / `powman_enter_swcore_off` then WFI. **Arm-only**.
 
-WS2812: **external** strip on GP15 via **PIO0 SM0** (side-set program; `machine_rp@v0.8.0`). Buffer `0x00RRGGBB`; wire GRB. Clkdiv from explicit `ws2812_cpu_hz()` (~12 MHz). Bit-bang escape: `ws2812_bb_out`. Avoid LCD SPI during `show`.
+WS2812: **external** strip on GP15 via **PIO0 SM0** (side-set program; `machine_rp@v0.9.0`). Buffer `0x00RRGGBB`; wire GRB. Clkdiv from explicit `ws2812_cpu_hz()` (~12 MHz). Bit-bang escape: `ws2812_bb_out`. Avoid LCD SPI during `show`.
 
 RISC-V twin (`riscv_lcd_text`): same Klin LCD module, Hazard3 crt0 + IMAGE_DEF `0x1101`. Needs `riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32` and `mem.S` (`memcpy`/`memset`; no `nano.specs` on Ubuntu’s RISC-V package).
 
@@ -78,7 +78,7 @@ fn main() {
 ```
 
 ```sh
-klin get github/klin-lang/machine_rp@v0.8.0
+klin get github/klin-lang/machine_rp@v0.9.0
 klin get github/klin-lang/waveshare_rp2350_lcd_096@v0.9.0
 ```
 
