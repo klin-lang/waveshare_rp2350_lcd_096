@@ -115,8 +115,9 @@ make emit KLIN=/path/to/klin/bin/klin.dart
 make elf                # riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32
 ```
 
-Flash the `.elf` / UF2 with picotool / OpenOCD / your usual Pico 2 flow.
-Boot the core that matches the IMAGE_DEF (Arm vs RISC-V).
+Flash the `.elf` / UF2 with picotool / OpenOCD / your usual Pico 2 flow —
+step-by-step: [PICOTOOL.md](PICOTOOL.md). Boot the core that matches the
+IMAGE_DEF (Arm vs RISC-V).
 
 ### Demo checklist
 
@@ -125,6 +126,7 @@ Boot the core that matches the IMAGE_DEF (Arm vs RISC-V).
 | `lcd_fill` / `lcd_rects` | solid / rect colors via DMA→SPI1 |
 | `lcd_pio_fill` | solid colors via **PIO-as-SPI** (GP10/11 remux) |
 | `lcd_text` | green `KLIN 0.2`, cyan `FONT 5X7` (Arm) |
+| `lcd_counter` | white LCD, black `x:` via `fmt.write` ++/s (no blanking) |
 | `riscv_lcd_text` | green `KLIN RV32`, cyan `HAZARD3` (RISC-V) |
 | `temp_chip` | `TEMP` + `T=xxC` updating, yellow bar |
 | `battery_mv` | `BAT` + `B=xxxxMV`, green/red bar |
