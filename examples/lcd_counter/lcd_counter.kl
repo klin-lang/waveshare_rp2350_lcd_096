@@ -1,6 +1,7 @@
 /// White LCD, black 5×7 font, `x:` increments once per second (no blanking).
-/// LCD text uses `[]i32` + `format_label_u32` — host `"x: $x"` is print-only
-/// (`printf` / `puts`), not the font API.
+/// Uses `fmt.write(buf[:], "x: $x")` then copies ASCII bytes into `[]i32` for
+/// the font API ([Klin 156](https://github.com/klin-lang/klin/issues/156)).
+import fmt
 import "../../waveshare_rp2350_lcd_096" board
 
 @[link("startup.s")]
@@ -10,17 +11,22 @@ fn main() {
     lcd.backlight(true)
     lcd.fill(board.color_white())
 
-    let mut prefix: [2]i32
-    prefix[0] = 'x'
-    prefix[1] = ':'
-    let mut empty: [1]i32
-
     let mut x: i32 = 0
     while true {
-        let mut line: [16]i32
-        let n = board.format_label_u32(line[:], prefix[:], x, empty[:0])
+        let mut buf: [32]u8
+        let n = fmt.write(buf[:], "x: $x")
+        let mut line: [32]i32
+        let mut len = n
+        if len < 0 {
+            len = 0
+        }
+        let mut i: i32 = 0
+        while i < len {
+            line[i] = cast(i32, buf[i])
+            i = i + 1
+        }
         lcd.fill_rect(8, 28, 144, 16, board.color_white())
-        lcd.draw_text_n(8, 28, line[:], n, board.color_black(), board.color_white())
+        lcd.draw_text_n(8, 28, line[:], len, board.color_black(), board.color_white())
         board.delay_ms(1000)
         x = x + 1
     }
